@@ -10,6 +10,322 @@ const PORT = process.env.PORT || 3000;
 // Senha do painel do proprietário (pode ser configurada via variável de ambiente)
 const OWNER_PASSWORD = process.env.OWNER_PASSWORD || 'gol2024';
 
+// =====================================
+// SUPABASE - BANCO DE DADOS NA NUVEM
+// =====================================
+// Configure as variáveis de ambiente no Vercel:
+// SUPABASE_URL = sua URL do Supabase
+// SUPABASE_KEY = sua chave anon/service do Supabase
+
+let supabase = null;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const useSupabase = SUPABASE_URL && SUPABASE_KEY;
+
+if (useSupabase) {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    console.log('✅ Supabase conectado! Dados serão persistidos na nuvem.');
+  } catch (error) {
+    console.error('❌ Erro ao conectar Supabase:', error.message);
+  }
+} else {
+  console.log('⚠️ Supabase não configurado. Usando armazenamento em memória (dados serão perdidos ao reiniciar).');
+}
+
+// =====================================
+// FUNÇÕES DO BANCO DE DADOS
+// =====================================
+
+// Cache em memória (usado como fallback e para performance)
+const salesStore = new Map();
+const stores = new Map();
+const productsStore = new Map();
+const categoriesStore = new Map();
+const promotionsStore = new Map();
+
+// Funções para salvar/carregar do Supabase
+const db = {
+  // PRODUTOS
+  async getProducts() {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase.from('products').select('*');
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('DB Error getProducts:', e.message);
+      }
+    }
+    // Fallback para memória
+    const all = [];
+    productsStore.forEach(products => all.push(...products));
+    return all;
+  },
+
+  async saveProduct(product) {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .upsert(product, { onConflict: 'id' })
+          .select();
+        if (error) throw error;
+        return data?.[0];
+      } catch (e) {
+        console.error('DB Error saveProduct:', e.message);
+      }
+    }
+    // Fallback para memória
+    if (!productsStore.has(1)) productsStore.set(1, []);
+    const products = productsStore.get(1);
+    const idx = products.findIndex(p => p.id === product.id);
+    if (idx >= 0) products[idx] = product;
+    else products.push(product);
+    return product;
+  },
+
+  async deleteProduct(id) {
+    if (useSupabase && supabase) {
+      try {
+        await supabase.from('products').delete().eq('id', id);
+      } catch (e) {
+        console.error('DB Error deleteProduct:', e.message);
+      }
+    }
+    // Fallback
+    productsStore.forEach((products, storeId) => {
+      const idx = products.findIndex(p => p.id == id);
+      if (idx >= 0) products.splice(idx, 1);
+    });
+  },
+
+  // CATEGORIAS
+  async getCategories() {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase.from('categories').select('*');
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('DB Error getCategories:', e.message);
+      }
+    }
+    const all = [];
+    categoriesStore.forEach(cats => all.push(...cats));
+    return all;
+  },
+
+  async saveCategory(category) {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('categories')
+          .upsert(category, { onConflict: 'id' })
+          .select();
+        if (error) throw error;
+        return data?.[0];
+      } catch (e) {
+        console.error('DB Error saveCategory:', e.message);
+      }
+    }
+    if (!categoriesStore.has(1)) categoriesStore.set(1, []);
+    const cats = categoriesStore.get(1);
+    const idx = cats.findIndex(c => c.id === category.id);
+    if (idx >= 0) cats[idx] = category;
+    else cats.push(category);
+    return category;
+  },
+
+  async deleteCategory(id) {
+    if (useSupabase && supabase) {
+      try {
+        await supabase.from('categories').delete().eq('id', id);
+      } catch (e) {
+        console.error('DB Error deleteCategory:', e.message);
+      }
+    }
+    categoriesStore.forEach((cats) => {
+      const idx = cats.findIndex(c => c.id == id);
+      if (idx >= 0) cats.splice(idx, 1);
+    });
+  },
+
+  // PROMOÇÕES
+  async getPromotions() {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase.from('promotions').select('*');
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('DB Error getPromotions:', e.message);
+      }
+    }
+    return Array.from(promotionsStore.values()).flat();
+  },
+
+  async savePromotion(promotion) {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('promotions')
+          .upsert(promotion, { onConflict: 'id' })
+          .select();
+        if (error) throw error;
+        return data?.[0];
+      } catch (e) {
+        console.error('DB Error savePromotion:', e.message);
+      }
+    }
+    if (!promotionsStore.has(1)) promotionsStore.set(1, []);
+    const promos = promotionsStore.get(1);
+    const idx = promos.findIndex(p => p.id === promotion.id);
+    if (idx >= 0) promos[idx] = promotion;
+    else promos.push(promotion);
+    return promotion;
+  },
+
+  async deletePromotion(id) {
+    if (useSupabase && supabase) {
+      try {
+        await supabase.from('promotions').delete().eq('id', id);
+      } catch (e) {
+        console.error('DB Error deletePromotion:', e.message);
+      }
+    }
+    promotionsStore.forEach((promos) => {
+      const idx = promos.findIndex(p => p.id == id);
+      if (idx >= 0) promos.splice(idx, 1);
+    });
+  },
+
+  // VENDAS
+  async getSales(storeId = null) {
+    if (useSupabase && supabase) {
+      try {
+        let query = supabase.from('sales').select('*');
+        if (storeId) query = query.eq('store_id', storeId);
+        const { data, error } = await query;
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('DB Error getSales:', e.message);
+      }
+    }
+    if (storeId) return salesStore.get(storeId) || [];
+    const all = [];
+    salesStore.forEach(sales => all.push(...sales));
+    return all;
+  },
+
+  async saveSale(sale) {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('sales')
+          .upsert(sale, { onConflict: 'sale_number' })
+          .select();
+        if (error) throw error;
+        return data?.[0];
+      } catch (e) {
+        console.error('DB Error saveSale:', e.message);
+      }
+    }
+    const storeId = sale.store_id || 1;
+    if (!salesStore.has(storeId)) salesStore.set(storeId, []);
+    const sales = salesStore.get(storeId);
+    const idx = sales.findIndex(s => s.sale_number === sale.sale_number);
+    if (idx >= 0) sales[idx] = sale;
+    else sales.push(sale);
+    return sale;
+  },
+
+  // LOJAS
+  async getStores() {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase.from('stores').select('*');
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('DB Error getStores:', e.message);
+      }
+    }
+    return Array.from(stores.values());
+  },
+
+  async saveStore(store) {
+    if (useSupabase && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('stores')
+          .upsert(store, { onConflict: 'id' })
+          .select();
+        if (error) throw error;
+        return data?.[0];
+      } catch (e) {
+        console.error('DB Error saveStore:', e.message);
+      }
+    }
+    stores.set(store.id, store);
+    return store;
+  },
+
+  // Carregar dados iniciais do Supabase para cache
+  async loadInitialData() {
+    if (!useSupabase || !supabase) return;
+    
+    console.log('📥 Carregando dados do Supabase para cache...');
+    
+    try {
+      // Carregar produtos
+      const products = await this.getProducts();
+      if (products.length > 0) {
+        productsStore.set(1, products);
+        console.log(`   ✅ ${products.length} produtos carregados`);
+      }
+      
+      // Carregar categorias
+      const categories = await this.getCategories();
+      if (categories.length > 0) {
+        categoriesStore.set(1, categories);
+        console.log(`   ✅ ${categories.length} categorias carregadas`);
+      }
+      
+      // Carregar promoções
+      const promotions = await this.getPromotions();
+      if (promotions.length > 0) {
+        promotionsStore.set(1, promotions);
+        console.log(`   ✅ ${promotions.length} promoções carregadas`);
+      }
+      
+      // Carregar lojas
+      const storesList = await this.getStores();
+      storesList.forEach(s => stores.set(s.id, s));
+      console.log(`   ✅ ${storesList.length} lojas carregadas`);
+      
+      // Carregar vendas
+      const sales = await this.getSales();
+      sales.forEach(s => {
+        const storeId = s.store_id || 1;
+        if (!salesStore.has(storeId)) salesStore.set(storeId, []);
+        salesStore.get(storeId).push(s);
+      });
+      console.log(`   ✅ ${sales.length} vendas carregadas`);
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados iniciais:', error.message);
+    }
+  }
+};
+
+// Carregar dados iniciais ao iniciar
+if (useSupabase) {
+  db.loadInitialData();
+}
+
 // Middleware - CORS configurado para aceitar requisições de qualquer origem (incluindo Electron)
 app.use(cors({
   origin: '*',
@@ -27,22 +343,13 @@ app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 // Servir arquivos estáticos do painel
 app.use('/dashboard', express.static(path.join(__dirname, 'public')));
 
-// Data storage (in-memory for Vercel serverless)
-// Note: In Vercel, data is stored in memory only and will be lost on cold start
-// For production, consider using an external database (MongoDB, Supabase, etc.)
-const salesStore = new Map();
-const stores = new Map();
-const productsStore = new Map(); // Store products by storeId
-const categoriesStore = new Map(); // Store categories
-const promotionsStore = new Map(); // Store promotions
-
 // Try to load data from files (only works in local/dev environment)
 const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
 const DATA_DIR = !isVercel ? path.join(__dirname, 'data') : null;
 const SALES_FILE = !isVercel ? path.join(DATA_DIR, 'sales.json') : null;
 const STORES_FILE = !isVercel ? path.join(DATA_DIR, 'stores.json') : null;
 
-if (!isVercel && DATA_DIR) {
+if (!isVercel && DATA_DIR && !useSupabase) {
   // Ensure data directory exists (local only)
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -559,18 +866,55 @@ app.get('/api/owner/compare', checkOwnerAuth, (req, res) => {
 // APIs DE ADMINISTRAÇÃO - Produtos, Categorias, Promoções
 // =====================================
 
-// Listar todos os produtos
+// Listar todos os produtos (com paginação do servidor)
 app.get('/api/admin/products', checkOwnerAuth, (req, res) => {
   try {
-    const allProducts = [];
+    const { page = 1, limit = 0, search = '' } = req.query;
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    
+    // Usar Map para evitar duplicatas de forma eficiente (O(n) ao invés de O(n²))
+    const productsMap = new Map();
+    
     productsStore.forEach((products, storeId) => {
       products.forEach(p => {
-        if (!allProducts.find(ap => ap.id === p.id || ap.barcode === p.barcode)) {
-          allProducts.push({ ...p, source_store_id: storeId });
+        // Usar ID como chave principal
+        const key = p.id || p.barcode || p.sku;
+        if (key && !productsMap.has(key)) {
+          productsMap.set(key, { ...p, source_store_id: storeId });
         }
       });
     });
-    res.json({ products: allProducts, total: allProducts.length });
+    
+    let allProducts = Array.from(productsMap.values());
+    
+    // Aplicar busca no servidor se fornecida
+    if (search) {
+      const searchLower = search.toLowerCase();
+      allProducts = allProducts.filter(p => 
+        (p.name && p.name.toLowerCase().includes(searchLower)) ||
+        (p.barcode && p.barcode.toLowerCase().includes(searchLower)) ||
+        (p.sku && p.sku.toLowerCase().includes(searchLower))
+      );
+    }
+    
+    const total = allProducts.length;
+    
+    // Paginação do servidor (se limit > 0)
+    if (limitNum > 0) {
+      const start = (pageNum - 1) * limitNum;
+      allProducts = allProducts.slice(start, start + limitNum);
+    }
+    
+    console.log('📦 Produtos carregados:', allProducts.length, 'de', total, 'total');
+    
+    res.json({ 
+      products: allProducts, 
+      total: total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: limitNum > 0 ? Math.ceil(total / limitNum) : 1
+    });
   } catch (error) {
     console.error('Error listing products:', error);
     res.status(500).json({ error: 'Erro ao listar produtos' });
@@ -597,7 +941,7 @@ app.get('/api/admin/products/:id', checkOwnerAuth, (req, res) => {
 });
 
 // Criar/Atualizar produto (será sincronizado para todas as lojas)
-app.post('/api/admin/products', checkOwnerAuth, (req, res) => {
+app.post('/api/admin/products', checkOwnerAuth, async (req, res) => {
   try {
     const product = req.body;
     product.updated_at = new Date().toISOString();
@@ -607,21 +951,20 @@ app.post('/api/admin/products', checkOwnerAuth, (req, res) => {
       product.created_at = new Date().toISOString();
     }
 
-    // Adicionar ao store 1 (loja principal/master)
+    // Salvar no banco de dados (Supabase ou memória)
+    await db.saveProduct(product);
+    
+    // Também atualizar cache em memória
     if (!productsStore.has(1)) {
       productsStore.set(1, []);
     }
-    
     const products = productsStore.get(1);
     const existingIndex = products.findIndex(p => p.id === product.id || (p.barcode && p.barcode === product.barcode));
-    
     if (existingIndex >= 0) {
       products[existingIndex] = { ...products[existingIndex], ...product };
     } else {
       products.push(product);
     }
-    
-    productsStore.set(1, products);
     
     console.log(`✅ Produto ${product.name} salvo com sucesso`);
     res.json({ success: true, product });
@@ -632,26 +975,24 @@ app.post('/api/admin/products', checkOwnerAuth, (req, res) => {
 });
 
 // Deletar produto
-app.delete('/api/admin/products/:id', checkOwnerAuth, (req, res) => {
+app.delete('/api/admin/products/:id', checkOwnerAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    let deleted = false;
     
+    // Deletar do banco de dados
+    await db.deleteProduct(parseInt(id));
+    
+    // Deletar do cache em memória
     productsStore.forEach((products, storeId) => {
       const index = products.findIndex(p => p.id == id);
       if (index >= 0) {
         products.splice(index, 1);
-        productsStore.set(storeId, products);
-        deleted = true;
       }
     });
     
-    if (deleted) {
-      res.json({ success: true, message: 'Produto deletado' });
-    } else {
-      res.status(404).json({ error: 'Produto não encontrado' });
-    }
+    res.json({ success: true, message: 'Produto deletado' });
   } catch (error) {
+    console.error('Error deleting product:', error);
     res.status(500).json({ error: 'Erro ao deletar produto' });
   }
 });
@@ -674,7 +1015,7 @@ app.get('/api/admin/categories', checkOwnerAuth, (req, res) => {
 });
 
 // Criar/Atualizar categoria
-app.post('/api/admin/categories', checkOwnerAuth, (req, res) => {
+app.post('/api/admin/categories', checkOwnerAuth, async (req, res) => {
   try {
     const category = req.body;
     category.updated_at = new Date().toISOString();
@@ -684,47 +1025,47 @@ app.post('/api/admin/categories', checkOwnerAuth, (req, res) => {
       category.created_at = new Date().toISOString();
     }
 
+    // Salvar no banco de dados
+    await db.saveCategory(category);
+
+    // Atualizar cache em memória
     if (!categoriesStore.has(1)) {
       categoriesStore.set(1, []);
     }
-    
     const categories = categoriesStore.get(1);
     const existingIndex = categories.findIndex(c => c.id === category.id);
-    
     if (existingIndex >= 0) {
       categories[existingIndex] = { ...categories[existingIndex], ...category };
     } else {
       categories.push(category);
     }
     
-    categoriesStore.set(1, categories);
     res.json({ success: true, category });
   } catch (error) {
+    console.error('Error saving category:', error);
     res.status(500).json({ error: 'Erro ao salvar categoria' });
   }
 });
 
 // Deletar categoria
-app.delete('/api/admin/categories/:id', checkOwnerAuth, (req, res) => {
+app.delete('/api/admin/categories/:id', checkOwnerAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    let deleted = false;
     
-    categoriesStore.forEach((categories, storeId) => {
+    // Deletar do banco de dados
+    await db.deleteCategory(parseInt(id));
+    
+    // Deletar do cache em memória
+    categoriesStore.forEach((categories) => {
       const index = categories.findIndex(c => c.id == id);
       if (index >= 0) {
         categories.splice(index, 1);
-        categoriesStore.set(storeId, categories);
-        deleted = true;
       }
     });
     
-    if (deleted) {
-      res.json({ success: true, message: 'Categoria deletada' });
-    } else {
-      res.status(404).json({ error: 'Categoria não encontrada' });
-    }
+    res.json({ success: true, message: 'Categoria deletada' });
   } catch (error) {
+    console.error('Error deleting category:', error);
     res.status(500).json({ error: 'Erro ao deletar categoria' });
   }
 });
@@ -740,7 +1081,7 @@ app.get('/api/admin/promotions', checkOwnerAuth, (req, res) => {
 });
 
 // Criar/Atualizar promoção
-app.post('/api/admin/promotions', checkOwnerAuth, (req, res) => {
+app.post('/api/admin/promotions', checkOwnerAuth, async (req, res) => {
   try {
     const promotion = req.body;
     promotion.updated_at = new Date().toISOString();
@@ -750,48 +1091,48 @@ app.post('/api/admin/promotions', checkOwnerAuth, (req, res) => {
       promotion.created_at = new Date().toISOString();
     }
 
+    // Salvar no banco de dados
+    await db.savePromotion(promotion);
+
+    // Atualizar cache em memória
     if (!promotionsStore.has(1)) {
       promotionsStore.set(1, []);
     }
-    
     const promotions = promotionsStore.get(1);
     const existingIndex = promotions.findIndex(p => p.id === promotion.id);
-    
     if (existingIndex >= 0) {
       promotions[existingIndex] = { ...promotions[existingIndex], ...promotion };
     } else {
       promotions.push(promotion);
     }
     
-    promotionsStore.set(1, promotions);
     console.log(`✅ Promoção salva: ${promotion.name || promotion.product_name}`);
     res.json({ success: true, promotion });
   } catch (error) {
+    console.error('Error saving promotion:', error);
     res.status(500).json({ error: 'Erro ao salvar promoção' });
   }
 });
 
 // Deletar promoção
-app.delete('/api/admin/promotions/:id', checkOwnerAuth, (req, res) => {
+app.delete('/api/admin/promotions/:id', checkOwnerAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    let deleted = false;
     
-    promotionsStore.forEach((promotions, storeId) => {
+    // Deletar do banco de dados
+    await db.deletePromotion(parseInt(id));
+    
+    // Deletar do cache em memória
+    promotionsStore.forEach((promotions) => {
       const index = promotions.findIndex(p => p.id == id);
       if (index >= 0) {
         promotions.splice(index, 1);
-        promotionsStore.set(storeId, promotions);
-        deleted = true;
       }
     });
     
-    if (deleted) {
-      res.json({ success: true, message: 'Promoção deletada' });
-    } else {
-      res.status(404).json({ error: 'Promoção não encontrada' });
-    }
+    res.json({ success: true, message: 'Promoção deletada' });
   } catch (error) {
+    console.error('Error deleting promotion:', error);
     res.status(500).json({ error: 'Erro ao deletar promoção' });
   }
 });
@@ -1708,32 +2049,107 @@ function getOwnerDashboardHTML() {
     }
 
     // =====================
-    // PRODUCTS MANAGEMENT
+    // PRODUCTS MANAGEMENT (Otimizado para 20k+ produtos)
     // =====================
+    let totalProductsInServer = 0;
+    let isLoadingProducts = false;
+    let useServerPagination = true; // Usar paginação do servidor para grandes volumes
+    
     async function loadProducts() {
+      if (isLoadingProducts) return;
+      isLoadingProducts = true;
+      
       try {
-        document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-gray-400"><div class="animate-pulse">⏳ Carregando ' + allProducts.length + ' produtos...</div></td></tr>';
+        document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-gray-400"><div class="animate-pulse">⏳ Carregando produtos...</div></td></tr>';
         
-        const response = await fetch(API_BASE + '/api/admin/products?password=' + encodeURIComponent(password));
-        const data = await response.json();
-        allProducts = data.products || [];
-        
-        // Extrair departamentos únicos
-        allDepartments = [...new Set(allProducts.map(p => p.department).filter(d => d))].sort();
-        
-        // Carregar categorias
+        // Carregar categorias primeiro
         await loadCategoriesForSelect();
         
-        // Popular filtros
-        populateFilters();
+        // Verificar quantos produtos existem
+        const countResponse = await fetch(API_BASE + '/api/admin/products?password=' + encodeURIComponent(password) + '&limit=1');
+        const countData = await countResponse.json();
+        totalProductsInServer = countData.total || 0;
         
-        // Aplicar filtros e renderizar
-        filterProducts();
+        document.getElementById('productsCount').textContent = totalProductsInServer.toLocaleString('pt-BR') + ' produtos cadastrados';
         
-        document.getElementById('productsCount').textContent = allProducts.length.toLocaleString('pt-BR') + ' produtos cadastrados';
+        // Se tem menos de 5000 produtos, carrega tudo (mais rápido para filtros locais)
+        // Se tem mais, usa paginação do servidor
+        if (totalProductsInServer <= 5000) {
+          useServerPagination = false;
+          await loadAllProductsInBatches();
+        } else {
+          useServerPagination = true;
+          allProducts = [];
+          // Carregar departamentos do primeiro lote
+          const deptResponse = await fetch(API_BASE + '/api/admin/products?password=' + encodeURIComponent(password) + '&limit=1000');
+          const deptData = await deptResponse.json();
+          allDepartments = [...new Set((deptData.products || []).map(p => p.department).filter(d => d))].sort();
+          populateFilters();
+          await loadProductsFromServer();
+        }
+        
       } catch (error) {
         console.error('Error loading products:', error);
-        document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-red-400">❌ Erro ao carregar produtos</td></tr>';
+        document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-red-400">❌ Erro ao carregar produtos. <button onclick="loadProducts()" class="text-blue-600 underline">Tentar novamente</button></td></tr>';
+      } finally {
+        isLoadingProducts = false;
+      }
+    }
+
+    // Carregar todos os produtos em lotes (para menos de 5000 produtos)
+    async function loadAllProductsInBatches() {
+      const batchSize = 2000;
+      allProducts = [];
+      let page = 1;
+      let hasMore = true;
+      
+      while (hasMore) {
+        document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-gray-400"><div class="animate-pulse">⏳ Carregando produtos... ' + allProducts.length + ' / ' + totalProductsInServer + '</div></td></tr>';
+        
+        const response = await fetch(API_BASE + '/api/admin/products?password=' + encodeURIComponent(password) + '&page=' + page + '&limit=' + batchSize);
+        const data = await response.json();
+        
+        if (data.products && data.products.length > 0) {
+          allProducts = allProducts.concat(data.products);
+          page++;
+        }
+        
+        hasMore = data.products && data.products.length === batchSize;
+      }
+      
+      // Extrair departamentos únicos
+      allDepartments = [...new Set(allProducts.map(p => p.department).filter(d => d))].sort();
+      populateFilters();
+      filterProducts();
+    }
+
+    // Carregar produtos do servidor com paginação (para mais de 5000 produtos)
+    async function loadProductsFromServer() {
+      const search = document.getElementById('productSearch').value.trim();
+      
+      document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-gray-400"><div class="animate-pulse">⏳ Carregando página ' + productPage + '...</div></td></tr>';
+      
+      try {
+        let url = API_BASE + '/api/admin/products?password=' + encodeURIComponent(password) + 
+                  '&page=' + productPage + '&limit=' + productsPerPage;
+        
+        if (search) {
+          url += '&search=' + encodeURIComponent(search);
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        filteredProducts = data.products || [];
+        totalProductPages = data.totalPages || 1;
+        totalProductsInServer = data.total || 0;
+        
+        document.getElementById('productsCount').textContent = totalProductsInServer.toLocaleString('pt-BR') + ' produtos' + (search ? ' encontrados' : ' cadastrados');
+        
+        renderProducts();
+      } catch (error) {
+        console.error('Error loading products from server:', error);
+        document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-red-400">❌ Erro ao carregar. <button onclick="loadProductsFromServer()" class="text-blue-600 underline">Tentar novamente</button></td></tr>';
       }
     }
 
@@ -1753,11 +2169,21 @@ function getOwnerDashboardHTML() {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => {
         productPage = 1;
-        filterProducts();
-      }, 300);
+        if (useServerPagination) {
+          loadProductsFromServer();
+        } else {
+          filterProducts();
+        }
+      }, 500); // 500ms para dar tempo de digitar
     }
 
     function filterProducts() {
+      if (useServerPagination) {
+        // Com paginação do servidor, apenas recarregar
+        loadProductsFromServer();
+        return;
+      }
+      
       const search = document.getElementById('productSearch').value.toLowerCase().trim();
       const categoryFilter = document.getElementById('filterCategory').value;
       const deptFilter = document.getElementById('filterDepartment').value;
@@ -1809,8 +2235,10 @@ function getOwnerDashboardHTML() {
         sortIndicator.textContent = productSortDirection === 'asc' ? '↑' : '↓';
       }
       
-      sortProductsArray();
-      renderProducts();
+      if (!useServerPagination) {
+        sortProductsArray();
+        renderProducts();
+      }
     }
 
     function sortProductsArray() {
@@ -1833,9 +2261,20 @@ function getOwnerDashboardHTML() {
     }
 
     function renderProducts() {
-      const start = (productPage - 1) * productsPerPage;
-      const end = start + productsPerPage;
-      const paged = filteredProducts.slice(start, end);
+      let start, end, paged;
+      
+      if (useServerPagination) {
+        // Com paginação do servidor, os dados já vêm paginados
+        start = (productPage - 1) * productsPerPage;
+        end = start + filteredProducts.length;
+        paged = filteredProducts;
+      } else {
+        // Paginação local
+        start = (productPage - 1) * productsPerPage;
+        end = start + productsPerPage;
+        paged = filteredProducts.slice(start, end);
+      }
+      
       const tbody = document.getElementById('productsTableBody');
       
       if (paged.length === 0) {
@@ -1893,9 +2332,10 @@ function getOwnerDashboardHTML() {
     }
 
     function updatePaginationInfo(from, to, total) {
+      const displayTotal = useServerPagination ? totalProductsInServer : total;
       document.getElementById('paginationInfo').textContent = 
         'Mostrando ' + from.toLocaleString('pt-BR') + '-' + to.toLocaleString('pt-BR') + 
-        ' de ' + total.toLocaleString('pt-BR') + ' produtos';
+        ' de ' + displayTotal.toLocaleString('pt-BR') + ' produtos';
       document.getElementById('gotoPage').max = totalProductPages;
       document.getElementById('gotoPage').placeholder = productPage;
     }
@@ -1929,7 +2369,13 @@ function getOwnerDashboardHTML() {
     function goToProductPage(page) {
       if (page < 1 || page > totalProductPages) return;
       productPage = page;
-      renderProducts();
+      
+      if (useServerPagination) {
+        loadProductsFromServer();
+      } else {
+        renderProducts();
+      }
+      
       // Scroll para o topo da tabela
       document.getElementById('tab-products').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -1937,8 +2383,13 @@ function getOwnerDashboardHTML() {
     function changeProductsPerPage() {
       productsPerPage = parseInt(document.getElementById('productsPerPageSelect').value);
       productPage = 1;
-      totalProductPages = Math.ceil(filteredProducts.length / productsPerPage);
-      renderProducts();
+      
+      if (useServerPagination) {
+        loadProductsFromServer();
+      } else {
+        totalProductPages = Math.ceil(filteredProducts.length / productsPerPage);
+        renderProducts();
+      }
     }
 
     function clearProductFilters() {
@@ -1950,7 +2401,12 @@ function getOwnerDashboardHTML() {
       productSortField = 'name';
       productSortDirection = 'asc';
       document.querySelectorAll('[id^="sort-"]').forEach(el => el.textContent = '↕');
-      filterProducts();
+      
+      if (useServerPagination) {
+        loadProductsFromServer();
+      } else {
+        filterProducts();
+      }
     }
 
     async function loadCategoriesForSelect() {
