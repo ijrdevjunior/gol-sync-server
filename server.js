@@ -1168,72 +1168,116 @@ function getOwnerDashboardHTML() {
 
       <!-- Product Modal -->
       <div id="productModal" class="fixed inset-0 modal-overlay hidden items-center justify-center z-50">
-        <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden mx-4">
+        <div class="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden mx-4">
           <div class="gradient-bg text-white px-6 py-4 flex justify-between items-center">
             <h2 id="productModalTitle" class="text-xl font-bold">Novo Produto</h2>
             <button onclick="closeProductModal()" class="p-2 hover:bg-white/20 rounded-lg">✕</button>
           </div>
           <form id="productForm" class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]" onsubmit="saveProduct(event)">
             <input type="hidden" id="productId">
-            <div class="grid grid-cols-2 gap-4">
-              <div class="col-span-2">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Nome do Produto *</label>
-                <input type="text" id="productName" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Código de Barras</label>
-                <input type="text" id="productBarcode" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">SKU</label>
-                <input type="text" id="productSku" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-                <select id="productCategory" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                  <option value="">Selecione...</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Departamento</label>
-                <input type="text" id="productDepartment" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Preço de Venda *</label>
-                <input type="number" step="0.01" id="productPrice" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Preço de Custo</label>
-                <input type="number" step="0.01" id="productCost" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Estoque</label>
-                <input type="number" id="productStock" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Unidade</label>
-                <select id="productUnit" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                  <option value="unit">Unidade</option>
-                  <option value="kg">Kg</option>
-                  <option value="g">Gramas</option>
-                  <option value="l">Litros</option>
-                  <option value="ml">ML</option>
-                </select>
-              </div>
-              <div class="col-span-2 flex items-center gap-4">
-                <label class="flex items-center gap-2">
-                  <input type="checkbox" id="productActive" checked class="w-5 h-5">
-                  <span class="text-sm text-gray-700">Ativo</span>
-                </label>
-                <label class="flex items-center gap-2">
-                  <input type="checkbox" id="productRequiresScale" class="w-5 h-5">
-                  <span class="text-sm text-gray-700">Requer Balança</span>
-                </label>
+            
+            <!-- Tabs do Modal -->
+            <div class="flex border-b mb-4">
+              <button type="button" onclick="switchProductTab('info')" class="product-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600" data-tab="info">
+                📋 Informações
+              </button>
+              <button type="button" onclick="switchProductTab('barcodes')" class="product-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-tab="barcodes">
+                📊 Códigos de Barras
+              </button>
+            </div>
+            
+            <!-- Tab Informações -->
+            <div id="productTab-info" class="product-tab-content">
+              <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Nome do Produto *</label>
+                  <input type="text" id="productName" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+                  <input type="text" id="productSku" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+                  <select id="productCategory" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="">Selecione...</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Departamento</label>
+                  <input type="text" id="productDepartment" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Preço de Venda *</label>
+                  <input type="number" step="0.01" id="productPrice" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Preço de Custo</label>
+                  <input type="number" step="0.01" id="productCost" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Estoque</label>
+                  <input type="number" id="productStock" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Unidade</label>
+                  <select id="productUnit" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="unit">Unidade</option>
+                    <option value="kg">Kg</option>
+                    <option value="g">Gramas</option>
+                    <option value="l">Litros</option>
+                    <option value="ml">ML</option>
+                  </select>
+                </div>
+                <div class="col-span-2 flex items-center gap-4">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" id="productActive" checked class="w-5 h-5">
+                    <span class="text-sm text-gray-700">Ativo</span>
+                  </label>
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" id="productRequiresScale" class="w-5 h-5">
+                    <span class="text-sm text-gray-700">Requer Balança</span>
+                  </label>
+                </div>
               </div>
             </div>
+            
+            <!-- Tab Códigos de Barras -->
+            <div id="productTab-barcodes" class="product-tab-content hidden">
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h3 class="font-semibold text-blue-800 mb-1">📊 Códigos de Barras Múltiplos</h3>
+                <p class="text-sm text-blue-700">
+                  Adicione quantos códigos de barras precisar. O primeiro será o principal.
+                  Útil para produtos com embalagens diferentes ou códigos alternativos.
+                </p>
+              </div>
+              
+              <!-- Adicionar novo barcode -->
+              <div class="flex gap-2 mb-4">
+                <input type="text" id="newBarcodeInput" placeholder="Digite ou escaneie o código de barras..." 
+                  class="flex-1 px-3 py-2 border-2 rounded-lg focus:ring-2 focus:ring-green-500 font-mono"
+                  onkeypress="if(event.key==='Enter'){event.preventDefault();addBarcode();}">
+                <button type="button" onclick="addBarcode()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                  ➕ Adicionar
+                </button>
+              </div>
+              
+              <!-- Lista de barcodes -->
+              <div id="barcodesList" class="space-y-2 max-h-[300px] overflow-y-auto">
+                <div class="text-center py-4 text-gray-400">
+                  Nenhum código de barras cadastrado
+                </div>
+              </div>
+              
+              <!-- Contador -->
+              <div id="barcodesCount" class="text-sm text-gray-500 mt-2 text-right">
+                0 códigos de barras
+              </div>
+            </div>
+            
             <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
               <button type="button" onclick="closeProductModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
-              <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Salvar Produto</button>
+              <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">💾 Salvar Produto</button>
             </div>
           </form>
         </div>
@@ -1807,11 +1851,23 @@ function getOwnerDashboardHTML() {
       tbody.innerHTML = paged.map((p, idx) => {
         const category = allCategories.find(c => c.id === p.category_id);
         const rowNum = start + idx + 1;
+        
+        // Contar códigos de barras
+        let barcodeCount = 0;
+        if (p.barcode) barcodeCount = 1;
+        if (p.barcodes && Array.isArray(p.barcodes)) barcodeCount = p.barcodes.length;
+        else if (p.all_barcodes && Array.isArray(p.all_barcodes)) barcodeCount = p.all_barcodes.length;
+        
+        const hasMultipleBarcodes = barcodeCount > 1;
+        
         return '<tr class="table-row hover:bg-blue-50 transition-colors">' +
           '<td class="px-3 py-2">' +
-            '<span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded block truncate max-w-[120px]" title="' + (p.barcode || p.sku || p.id) + '">' + 
-              (p.barcode || p.sku || p.id) + 
-            '</span>' +
+            '<div class="flex items-center gap-1">' +
+              '<span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded truncate max-w-[100px]" title="' + (p.barcode || p.sku || p.id) + '">' + 
+                (p.barcode || p.sku || p.id) + 
+              '</span>' +
+              (hasMultipleBarcodes ? '<span class="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full" title="' + barcodeCount + ' códigos de barras">+' + (barcodeCount - 1) + '</span>' : '') +
+            '</div>' +
           '</td>' +
           '<td class="px-3 py-2">' +
             '<div class="font-medium text-gray-800 truncate max-w-[250px]" title="' + (p.name || '') + '">' + (p.name || 'Sem nome') + '</div>' +
@@ -1912,11 +1968,25 @@ function getOwnerDashboardHTML() {
       }
     }
 
+    // Array para armazenar códigos de barras do produto atual
+    let currentProductBarcodes = [];
+
+    function switchProductTab(tab) {
+      document.querySelectorAll('.product-tab-btn').forEach(btn => {
+        btn.classList.remove('border-blue-600', 'text-blue-600');
+        btn.classList.add('border-transparent', 'text-gray-500');
+      });
+      document.querySelector('.product-tab-btn[data-tab="' + tab + '"]').classList.remove('border-transparent', 'text-gray-500');
+      document.querySelector('.product-tab-btn[data-tab="' + tab + '"]').classList.add('border-blue-600', 'text-blue-600');
+      
+      document.querySelectorAll('.product-tab-content').forEach(content => content.classList.add('hidden'));
+      document.getElementById('productTab-' + tab).classList.remove('hidden');
+    }
+
     function openProductModal(product = null) {
       document.getElementById('productModalTitle').textContent = product ? 'Editar Produto' : 'Novo Produto';
       document.getElementById('productId').value = product ? product.id : '';
       document.getElementById('productName').value = product ? product.name : '';
-      document.getElementById('productBarcode').value = product ? product.barcode || '' : '';
       document.getElementById('productSku').value = product ? product.sku || '' : '';
       document.getElementById('productCategory').value = product ? product.category_id || '' : '';
       document.getElementById('productDepartment').value = product ? product.department || '' : '';
@@ -1927,13 +1997,117 @@ function getOwnerDashboardHTML() {
       document.getElementById('productActive').checked = product ? product.is_active !== false : true;
       document.getElementById('productRequiresScale').checked = product ? product.requires_scale : false;
       
+      // Carregar códigos de barras
+      currentProductBarcodes = [];
+      if (product) {
+        // Adicionar barcode principal
+        if (product.barcode) {
+          currentProductBarcodes.push({ barcode: product.barcode, isPrimary: true });
+        }
+        // Adicionar barcodes adicionais se existirem
+        if (product.barcodes && Array.isArray(product.barcodes)) {
+          product.barcodes.forEach(b => {
+            if (b && b !== product.barcode) {
+              const bc = typeof b === 'string' ? b : b.barcode;
+              if (bc && !currentProductBarcodes.find(x => x.barcode === bc)) {
+                currentProductBarcodes.push({ barcode: bc, isPrimary: false });
+              }
+            }
+          });
+        }
+        // Adicionar all_barcodes se existirem
+        if (product.all_barcodes && Array.isArray(product.all_barcodes)) {
+          product.all_barcodes.forEach(b => {
+            const bc = typeof b === 'string' ? b : b.barcode;
+            if (bc && !currentProductBarcodes.find(x => x.barcode === bc)) {
+              currentProductBarcodes.push({ barcode: bc, isPrimary: false });
+            }
+          });
+        }
+      }
+      renderBarcodesList();
+      
+      // Resetar para aba de informações
+      switchProductTab('info');
+      document.getElementById('newBarcodeInput').value = '';
+      
       document.getElementById('productModal').classList.remove('hidden');
       document.getElementById('productModal').classList.add('flex');
+    }
+
+    function renderBarcodesList() {
+      const list = document.getElementById('barcodesList');
+      const count = document.getElementById('barcodesCount');
+      
+      if (currentProductBarcodes.length === 0) {
+        list.innerHTML = '<div class="text-center py-4 text-gray-400">Nenhum código de barras cadastrado</div>';
+        count.textContent = '0 códigos de barras';
+        return;
+      }
+      
+      list.innerHTML = currentProductBarcodes.map((b, idx) => {
+        return '<div class="flex items-center gap-2 p-2 bg-gray-50 rounded-lg ' + (b.isPrimary ? 'border-2 border-green-400' : 'border') + '">' +
+          '<span class="font-mono text-sm flex-1 bg-white px-3 py-1 rounded">' + b.barcode + '</span>' +
+          (b.isPrimary 
+            ? '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Principal</span>' 
+            : '<button type="button" onclick="setPrimaryBarcode(' + idx + ')" class="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded">Tornar Principal</button>') +
+          '<button type="button" onclick="removeBarcode(' + idx + ')" class="p-1 text-red-500 hover:bg-red-50 rounded" title="Remover">🗑️</button>' +
+        '</div>';
+      }).join('');
+      
+      count.textContent = currentProductBarcodes.length + ' código' + (currentProductBarcodes.length !== 1 ? 's' : '') + ' de barras';
+    }
+
+    function addBarcode() {
+      const input = document.getElementById('newBarcodeInput');
+      const barcode = input.value.trim();
+      
+      if (!barcode) {
+        alert('Digite um código de barras');
+        return;
+      }
+      
+      if (currentProductBarcodes.find(b => b.barcode === barcode)) {
+        alert('Este código de barras já foi adicionado');
+        input.value = '';
+        return;
+      }
+      
+      // Se é o primeiro, é o principal
+      const isPrimary = currentProductBarcodes.length === 0;
+      currentProductBarcodes.push({ barcode, isPrimary });
+      
+      input.value = '';
+      input.focus();
+      renderBarcodesList();
+    }
+
+    function removeBarcode(index) {
+      const removed = currentProductBarcodes[index];
+      currentProductBarcodes.splice(index, 1);
+      
+      // Se removeu o principal e ainda tem outros, o primeiro vira principal
+      if (removed.isPrimary && currentProductBarcodes.length > 0) {
+        currentProductBarcodes[0].isPrimary = true;
+      }
+      
+      renderBarcodesList();
+    }
+
+    function setPrimaryBarcode(index) {
+      currentProductBarcodes.forEach((b, i) => {
+        b.isPrimary = (i === index);
+      });
+      // Mover para o início
+      const [primary] = currentProductBarcodes.splice(index, 1);
+      currentProductBarcodes.unshift(primary);
+      renderBarcodesList();
     }
 
     function closeProductModal() {
       document.getElementById('productModal').classList.add('hidden');
       document.getElementById('productModal').classList.remove('flex');
+      currentProductBarcodes = [];
     }
 
     function editProduct(id) {
@@ -1943,10 +2117,20 @@ function getOwnerDashboardHTML() {
 
     async function saveProduct(e) {
       e.preventDefault();
+      
+      // Pegar o barcode principal (primeiro da lista)
+      const primaryBarcode = currentProductBarcodes.find(b => b.isPrimary)?.barcode || 
+                            currentProductBarcodes[0]?.barcode || null;
+      
+      // Todos os barcodes adicionais
+      const allBarcodes = currentProductBarcodes.map(b => b.barcode);
+      
       const product = {
         id: document.getElementById('productId').value ? parseInt(document.getElementById('productId').value) : null,
         name: document.getElementById('productName').value,
-        barcode: document.getElementById('productBarcode').value || null,
+        barcode: primaryBarcode,
+        barcodes: allBarcodes,
+        all_barcodes: allBarcodes,
         sku: document.getElementById('productSku').value || null,
         category_id: document.getElementById('productCategory').value ? parseInt(document.getElementById('productCategory').value) : null,
         department: document.getElementById('productDepartment').value || null,
