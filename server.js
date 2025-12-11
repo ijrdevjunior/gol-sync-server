@@ -1012,34 +1012,113 @@ function getOwnerDashboardHTML() {
       <!-- PRODUCTS TAB -->
       <div id="tab-products" class="tab-content">
         <div class="bg-white rounded-xl p-6 card-shadow mb-6">
-          <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-bold text-gray-800">📦 Gerenciar Produtos</h2>
-            <div class="flex gap-2">
-              <input type="text" id="productSearch" placeholder="Buscar produto..." 
-                class="px-4 py-2 border rounded-lg w-64" oninput="filterProducts()">
-              <button onclick="openProductModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                ➕ Novo Produto
+          <!-- Header com título e botão -->
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-xl font-bold text-gray-800">📦 Gerenciar Produtos</h2>
+              <p id="productsCount" class="text-sm text-gray-500">Carregando...</p>
+            </div>
+            <button onclick="openProductModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2">
+              <span>➕</span> Novo Produto
+            </button>
+          </div>
+
+          <!-- Filtros Avançados -->
+          <div class="bg-gray-50 rounded-xl p-4 mb-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+              <!-- Busca -->
+              <div class="lg:col-span-2">
+                <label class="block text-xs font-medium text-gray-600 mb-1">🔍 Buscar</label>
+                <input type="text" id="productSearch" placeholder="Nome, código ou barcode..." 
+                  class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500" 
+                  oninput="debounceSearch()">
+              </div>
+              <!-- Categoria -->
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">📁 Categoria</label>
+                <select id="filterCategory" class="w-full px-3 py-2 border rounded-lg text-sm" onchange="filterProducts()">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+              <!-- Departamento -->
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">🏢 Departamento</label>
+                <select id="filterDepartment" class="w-full px-3 py-2 border rounded-lg text-sm" onchange="filterProducts()">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+              <!-- Status -->
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">📊 Status</label>
+                <select id="filterStatus" class="w-full px-3 py-2 border rounded-lg text-sm" onchange="filterProducts()">
+                  <option value="">Todos</option>
+                  <option value="active">Ativos</option>
+                  <option value="inactive">Inativos</option>
+                </select>
+              </div>
+            </div>
+            <div class="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-gray-600">Exibir:</span>
+                <select id="productsPerPageSelect" class="px-2 py-1 border rounded text-sm" onchange="changeProductsPerPage()">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+                <span class="text-xs text-gray-600">por página</span>
+              </div>
+              <button onclick="clearProductFilters()" class="text-xs text-blue-600 hover:text-blue-800">
+                🔄 Limpar filtros
               </button>
             </div>
           </div>
-          <div class="overflow-x-auto">
+
+          <!-- Tabela de Produtos -->
+          <div class="overflow-x-auto border rounded-lg">
             <table class="w-full">
-              <thead class="bg-gray-50">
+              <thead class="bg-gray-100">
                 <tr>
-                  <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Código</th>
-                  <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Nome</th>
-                  <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Categoria</th>
-                  <th class="px-4 py-3 text-right text-sm font-medium text-gray-600">Preço</th>
-                  <th class="px-4 py-3 text-center text-sm font-medium text-gray-600">Status</th>
-                  <th class="px-4 py-3 text-center text-sm font-medium text-gray-600">Ações</th>
+                  <th class="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-200" onclick="sortProducts('barcode')">
+                    Código <span id="sort-barcode" class="text-gray-400">↕</span>
+                  </th>
+                  <th class="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-200" onclick="sortProducts('name')">
+                    Nome <span id="sort-name" class="text-gray-400">↕</span>
+                  </th>
+                  <th class="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Categoria</th>
+                  <th class="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Dept.</th>
+                  <th class="px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-200" onclick="sortProducts('price')">
+                    Preço <span id="sort-price" class="text-gray-400">↕</span>
+                  </th>
+                  <th class="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                  <th class="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Ações</th>
                 </tr>
               </thead>
-              <tbody id="productsTableBody" class="divide-y divide-gray-100">
-                <tr><td colspan="6" class="text-center py-8 text-gray-400">Carregando produtos...</td></tr>
+              <tbody id="productsTableBody" class="divide-y divide-gray-100 bg-white">
+                <tr><td colspan="7" class="text-center py-12 text-gray-400">
+                  <div class="animate-pulse">⏳ Carregando produtos...</div>
+                </td></tr>
               </tbody>
             </table>
           </div>
-          <div id="productsPagination" class="flex justify-center gap-2 mt-4"></div>
+
+          <!-- Paginação Avançada -->
+          <div class="flex items-center justify-between mt-4 px-2">
+            <div id="paginationInfo" class="text-sm text-gray-600">
+              Mostrando 0 de 0 produtos
+            </div>
+            <div class="flex items-center gap-1">
+              <button onclick="goToProductPage(1)" class="px-3 py-1 rounded border hover:bg-gray-100 text-sm" title="Primeira página">⏮️</button>
+              <button onclick="goToProductPage(productPage - 1)" class="px-3 py-1 rounded border hover:bg-gray-100 text-sm" title="Anterior">◀️</button>
+              <div id="pageNumbers" class="flex gap-1"></div>
+              <button onclick="goToProductPage(productPage + 1)" class="px-3 py-1 rounded border hover:bg-gray-100 text-sm" title="Próxima">▶️</button>
+              <button onclick="goToProductPage(totalProductPages)" class="px-3 py-1 rounded border hover:bg-gray-100 text-sm" title="Última página">⏭️</button>
+              <span class="mx-2 text-gray-400">|</span>
+              <span class="text-sm text-gray-600">Ir para:</span>
+              <input type="number" id="gotoPage" min="1" class="w-16 px-2 py-1 border rounded text-sm text-center" 
+                onkeypress="if(event.key==='Enter')goToProductPage(parseInt(this.value))">
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1549,10 +1628,16 @@ function getOwnerDashboardHTML() {
     // =====================
     let currentTab = 'dashboard';
     let allProducts = [];
+    let filteredProducts = [];
     let allCategories = [];
     let allPromotions = [];
+    let allDepartments = [];
     let productPage = 1;
-    const productsPerPage = 20;
+    let productsPerPage = 50;
+    let totalProductPages = 1;
+    let productSortField = 'name';
+    let productSortDirection = 'asc';
+    let searchTimeout = null;
 
     function switchTab(tab) {
       currentTab = tab;
@@ -1583,68 +1668,233 @@ function getOwnerDashboardHTML() {
     // =====================
     async function loadProducts() {
       try {
+        document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-gray-400"><div class="animate-pulse">⏳ Carregando ' + allProducts.length + ' produtos...</div></td></tr>';
+        
         const response = await fetch(API_BASE + '/api/admin/products?password=' + encodeURIComponent(password));
         const data = await response.json();
         allProducts = data.products || [];
-        renderProducts();
+        
+        // Extrair departamentos únicos
+        allDepartments = [...new Set(allProducts.map(p => p.department).filter(d => d))].sort();
+        
+        // Carregar categorias
         await loadCategoriesForSelect();
+        
+        // Popular filtros
+        populateFilters();
+        
+        // Aplicar filtros e renderizar
+        filterProducts();
+        
+        document.getElementById('productsCount').textContent = allProducts.length.toLocaleString('pt-BR') + ' produtos cadastrados';
       } catch (error) {
         console.error('Error loading products:', error);
+        document.getElementById('productsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-12 text-red-400">❌ Erro ao carregar produtos</td></tr>';
       }
+    }
+
+    function populateFilters() {
+      // Categorias
+      const catSelect = document.getElementById('filterCategory');
+      catSelect.innerHTML = '<option value="">Todas (' + allCategories.length + ')</option>' +
+        allCategories.map(c => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+      
+      // Departamentos
+      const deptSelect = document.getElementById('filterDepartment');
+      deptSelect.innerHTML = '<option value="">Todos (' + allDepartments.length + ')</option>' +
+        allDepartments.map(d => '<option value="' + d + '">' + d + '</option>').join('');
+    }
+
+    function debounceSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        productPage = 1;
+        filterProducts();
+      }, 300);
     }
 
     function filterProducts() {
-      productPage = 1;
+      const search = document.getElementById('productSearch').value.toLowerCase().trim();
+      const categoryFilter = document.getElementById('filterCategory').value;
+      const deptFilter = document.getElementById('filterDepartment').value;
+      const statusFilter = document.getElementById('filterStatus').value;
+      
+      filteredProducts = allProducts.filter(p => {
+        // Busca por texto
+        const matchSearch = !search || 
+          (p.name && p.name.toLowerCase().includes(search)) ||
+          (p.barcode && p.barcode.toLowerCase().includes(search)) ||
+          (p.sku && p.sku.toLowerCase().includes(search));
+        
+        // Filtro por categoria
+        const matchCategory = !categoryFilter || p.category_id == categoryFilter;
+        
+        // Filtro por departamento
+        const matchDept = !deptFilter || p.department === deptFilter;
+        
+        // Filtro por status
+        const matchStatus = !statusFilter || 
+          (statusFilter === 'active' && p.is_active !== false) ||
+          (statusFilter === 'inactive' && p.is_active === false);
+        
+        return matchSearch && matchCategory && matchDept && matchStatus;
+      });
+      
+      // Ordenar
+      sortProductsArray();
+      
+      // Atualizar paginação
+      totalProductPages = Math.ceil(filteredProducts.length / productsPerPage);
+      if (productPage > totalProductPages) productPage = Math.max(1, totalProductPages);
+      
       renderProducts();
     }
 
-    function renderProducts() {
-      const search = document.getElementById('productSearch').value.toLowerCase();
-      const filtered = allProducts.filter(p => 
-        (p.name && p.name.toLowerCase().includes(search)) ||
-        (p.barcode && p.barcode.includes(search)) ||
-        (p.sku && p.sku.includes(search))
-      );
+    function sortProducts(field) {
+      if (productSortField === field) {
+        productSortDirection = productSortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        productSortField = field;
+        productSortDirection = 'asc';
+      }
       
+      // Atualizar indicadores visuais
+      document.querySelectorAll('[id^="sort-"]').forEach(el => el.textContent = '↕');
+      const sortIndicator = document.getElementById('sort-' + field);
+      if (sortIndicator) {
+        sortIndicator.textContent = productSortDirection === 'asc' ? '↑' : '↓';
+      }
+      
+      sortProductsArray();
+      renderProducts();
+    }
+
+    function sortProductsArray() {
+      filteredProducts.sort((a, b) => {
+        let aVal = a[productSortField] || '';
+        let bVal = b[productSortField] || '';
+        
+        if (productSortField === 'price') {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
+        } else {
+          aVal = String(aVal).toLowerCase();
+          bVal = String(bVal).toLowerCase();
+        }
+        
+        if (aVal < bVal) return productSortDirection === 'asc' ? -1 : 1;
+        if (aVal > bVal) return productSortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    function renderProducts() {
       const start = (productPage - 1) * productsPerPage;
-      const paged = filtered.slice(start, start + productsPerPage);
+      const end = start + productsPerPage;
+      const paged = filteredProducts.slice(start, end);
       const tbody = document.getElementById('productsTableBody');
       
       if (paged.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-400">Nenhum produto encontrado</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-12 text-gray-400">' +
+          '<p class="text-2xl mb-2">📦</p>' +
+          '<p>Nenhum produto encontrado</p>' +
+          '<p class="text-sm">Tente ajustar os filtros</p>' +
+        '</td></tr>';
+        updatePaginationInfo(0, 0, 0);
         return;
       }
 
-      tbody.innerHTML = paged.map(p => {
+      tbody.innerHTML = paged.map((p, idx) => {
         const category = allCategories.find(c => c.id === p.category_id);
-        return '<tr class="table-row hover:bg-gray-50">' +
-          '<td class="px-4 py-3"><span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded">' + (p.barcode || p.sku || p.id) + '</span></td>' +
-          '<td class="px-4 py-3 font-medium">' + (p.name || 'Sem nome') + '</td>' +
-          '<td class="px-4 py-3 text-sm text-gray-600">' + (category ? category.name : '-') + '</td>' +
-          '<td class="px-4 py-3 text-right font-bold text-green-600">$' + (p.price || 0).toFixed(2) + '</td>' +
-          '<td class="px-4 py-3 text-center">' +
-            (p.is_active !== false ? '<span class="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">Ativo</span>' : '<span class="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700">Inativo</span>') +
+        const rowNum = start + idx + 1;
+        return '<tr class="table-row hover:bg-blue-50 transition-colors">' +
+          '<td class="px-3 py-2">' +
+            '<span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded block truncate max-w-[120px]" title="' + (p.barcode || p.sku || p.id) + '">' + 
+              (p.barcode || p.sku || p.id) + 
+            '</span>' +
           '</td>' +
-          '<td class="px-4 py-3 text-center">' +
-            '<button onclick="editProduct(' + p.id + ')" class="text-blue-600 hover:text-blue-800 mr-2">✏️</button>' +
-            '<button onclick="deleteProduct(' + p.id + ')" class="text-red-600 hover:text-red-800">🗑️</button>' +
+          '<td class="px-3 py-2">' +
+            '<div class="font-medium text-gray-800 truncate max-w-[250px]" title="' + (p.name || '') + '">' + (p.name || 'Sem nome') + '</div>' +
+            (p.name_pt && p.name_pt !== p.name ? '<div class="text-xs text-gray-400 truncate">' + p.name_pt + '</div>' : '') +
+          '</td>' +
+          '<td class="px-3 py-2 text-sm text-gray-600">' + (category ? category.name : '-') + '</td>' +
+          '<td class="px-3 py-2 text-xs text-gray-500">' + (p.department || '-') + '</td>' +
+          '<td class="px-3 py-2 text-right font-bold text-green-600">$' + (p.price || 0).toFixed(2) + '</td>' +
+          '<td class="px-3 py-2 text-center">' +
+            (p.is_active !== false 
+              ? '<span class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">✓</span>' 
+              : '<span class="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">✗</span>') +
+          '</td>' +
+          '<td class="px-3 py-2 text-center">' +
+            '<button onclick="editProduct(' + p.id + ')" class="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Editar">✏️</button>' +
+            '<button onclick="deleteProduct(' + p.id + ')" class="p-1 text-red-600 hover:bg-red-100 rounded" title="Excluir">🗑️</button>' +
           '</td>' +
         '</tr>';
       }).join('');
 
-      // Pagination
-      const totalPages = Math.ceil(filtered.length / productsPerPage);
-      const pagination = document.getElementById('productsPagination');
-      pagination.innerHTML = '';
-      if (totalPages > 1) {
-        for (let i = 1; i <= totalPages; i++) {
-          const btn = document.createElement('button');
-          btn.className = 'px-3 py-1 rounded ' + (i === productPage ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300');
-          btn.textContent = i;
-          btn.onclick = () => { productPage = i; renderProducts(); };
-          pagination.appendChild(btn);
-        }
+      updatePaginationInfo(start + 1, Math.min(end, filteredProducts.length), filteredProducts.length);
+      renderPagination();
+    }
+
+    function updatePaginationInfo(from, to, total) {
+      document.getElementById('paginationInfo').textContent = 
+        'Mostrando ' + from.toLocaleString('pt-BR') + '-' + to.toLocaleString('pt-BR') + 
+        ' de ' + total.toLocaleString('pt-BR') + ' produtos';
+      document.getElementById('gotoPage').max = totalProductPages;
+      document.getElementById('gotoPage').placeholder = productPage;
+    }
+
+    function renderPagination() {
+      const pageNumbers = document.getElementById('pageNumbers');
+      pageNumbers.innerHTML = '';
+      
+      // Mostrar no máximo 7 páginas
+      let startPage = Math.max(1, productPage - 3);
+      let endPage = Math.min(totalProductPages, startPage + 6);
+      if (endPage - startPage < 6) {
+        startPage = Math.max(1, endPage - 6);
       }
+      
+      if (startPage > 1) {
+        pageNumbers.innerHTML += '<span class="px-2 text-gray-400">...</span>';
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        const isActive = i === productPage;
+        pageNumbers.innerHTML += '<button onclick="goToProductPage(' + i + ')" class="px-3 py-1 rounded text-sm ' + 
+          (isActive ? 'bg-blue-600 text-white' : 'border hover:bg-gray-100') + '">' + i + '</button>';
+      }
+      
+      if (endPage < totalProductPages) {
+        pageNumbers.innerHTML += '<span class="px-2 text-gray-400">...</span>';
+      }
+    }
+
+    function goToProductPage(page) {
+      if (page < 1 || page > totalProductPages) return;
+      productPage = page;
+      renderProducts();
+      // Scroll para o topo da tabela
+      document.getElementById('tab-products').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function changeProductsPerPage() {
+      productsPerPage = parseInt(document.getElementById('productsPerPageSelect').value);
+      productPage = 1;
+      totalProductPages = Math.ceil(filteredProducts.length / productsPerPage);
+      renderProducts();
+    }
+
+    function clearProductFilters() {
+      document.getElementById('productSearch').value = '';
+      document.getElementById('filterCategory').value = '';
+      document.getElementById('filterDepartment').value = '';
+      document.getElementById('filterStatus').value = '';
+      productPage = 1;
+      productSortField = 'name';
+      productSortDirection = 'asc';
+      document.querySelectorAll('[id^="sort-"]').forEach(el => el.textContent = '↕');
+      filterProducts();
     }
 
     async function loadCategoriesForSelect() {
@@ -1652,6 +1902,8 @@ function getOwnerDashboardHTML() {
         const response = await fetch(API_BASE + '/api/admin/categories?password=' + encodeURIComponent(password));
         const data = await response.json();
         allCategories = data.categories || [];
+        
+        // Atualizar select do modal de produto
         const select = document.getElementById('productCategory');
         select.innerHTML = '<option value="">Selecione...</option>' +
           allCategories.map(c => '<option value="' + c.id + '">' + c.name + '</option>').join('');
@@ -1685,7 +1937,7 @@ function getOwnerDashboardHTML() {
     }
 
     function editProduct(id) {
-      const product = allProducts.find(p => p.id === id);
+      const product = allProducts.find(p => p.id === id) || filteredProducts.find(p => p.id === id);
       if (product) openProductModal(product);
     }
 
