@@ -10,9 +10,19 @@ const PORT = process.env.PORT || 3000;
 // Senha do painel do proprietário (pode ser configurada via variável de ambiente)
 const OWNER_PASSWORD = process.env.OWNER_PASSWORD || 'gol2024';
 
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
+// Middleware - CORS configurado para aceitar requisições de qualquer origem (incluindo Electron)
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Owner-Password'],
+  credentials: false
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Servir arquivos estáticos do painel
 app.use('/dashboard', express.static(path.join(__dirname, 'public')));
@@ -611,11 +621,15 @@ function getOwnerDashboardHTML() {
             </div>
           </div>
           <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 bg-green-500/30 px-3 py-1 rounded-full">
+              <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+              <span class="text-xs font-medium text-green-200">TEMPO REAL</span>
+            </div>
             <div class="text-right">
-              <p class="text-sm text-blue-200">Última atualização</p>
+              <p class="text-sm text-blue-200">Atualiza a cada 10s</p>
               <p id="lastUpdate" class="font-semibold">--</p>
             </div>
-            <button onclick="loadData()" class="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition-colors" title="Atualizar">
+            <button onclick="loadData()" class="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition-colors" title="Atualizar agora">
               🔄
             </button>
             <button onclick="logout()" class="p-2 bg-red-500/80 rounded-lg hover:bg-red-600 transition-colors" title="Sair">
@@ -748,8 +762,8 @@ function getOwnerDashboardHTML() {
           document.getElementById('loginScreen').classList.add('hidden');
           document.getElementById('dashboardScreen').classList.remove('hidden');
           loadData();
-          // Auto refresh every 30 seconds
-          setInterval(loadData, 30000);
+          // Auto refresh every 10 seconds for real-time updates
+          setInterval(loadData, 10000);
         } else {
           document.getElementById('loginError').classList.remove('hidden');
         }
