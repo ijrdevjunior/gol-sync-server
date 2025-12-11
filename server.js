@@ -34,6 +34,7 @@ const salesStore = new Map();
 const stores = new Map();
 const productsStore = new Map(); // Store products by storeId
 const categoriesStore = new Map(); // Store categories
+const promotionsStore = new Map(); // Store promotions
 
 // Try to load data from files (only works in local/dev environment)
 const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
@@ -554,6 +555,283 @@ app.get('/api/owner/compare', checkOwnerAuth, (req, res) => {
   }
 });
 
+// =====================================
+// APIs DE ADMINISTRAÇÃO - Produtos, Categorias, Promoções
+// =====================================
+
+// Listar todos os produtos
+app.get('/api/admin/products', checkOwnerAuth, (req, res) => {
+  try {
+    const allProducts = [];
+    productsStore.forEach((products, storeId) => {
+      products.forEach(p => {
+        if (!allProducts.find(ap => ap.id === p.id || ap.barcode === p.barcode)) {
+          allProducts.push({ ...p, source_store_id: storeId });
+        }
+      });
+    });
+    res.json({ products: allProducts, total: allProducts.length });
+  } catch (error) {
+    console.error('Error listing products:', error);
+    res.status(500).json({ error: 'Erro ao listar produtos' });
+  }
+});
+
+// Buscar produto por ID ou barcode
+app.get('/api/admin/products/:id', checkOwnerAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    let found = null;
+    productsStore.forEach((products) => {
+      const product = products.find(p => p.id == id || p.barcode === id);
+      if (product) found = product;
+    });
+    if (found) {
+      res.json(found);
+    } else {
+      res.status(404).json({ error: 'Produto não encontrado' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar produto' });
+  }
+});
+
+// Criar/Atualizar produto (será sincronizado para todas as lojas)
+app.post('/api/admin/products', checkOwnerAuth, (req, res) => {
+  try {
+    const product = req.body;
+    product.updated_at = new Date().toISOString();
+    
+    if (!product.id) {
+      product.id = Date.now();
+      product.created_at = new Date().toISOString();
+    }
+
+    // Adicionar ao store 1 (loja principal/master)
+    if (!productsStore.has(1)) {
+      productsStore.set(1, []);
+    }
+    
+    const products = productsStore.get(1);
+    const existingIndex = products.findIndex(p => p.id === product.id || (p.barcode && p.barcode === product.barcode));
+    
+    if (existingIndex >= 0) {
+      products[existingIndex] = { ...products[existingIndex], ...product };
+    } else {
+      products.push(product);
+    }
+    
+    productsStore.set(1, products);
+    
+    console.log(`✅ Produto ${product.name} salvo com sucesso`);
+    res.json({ success: true, product });
+  } catch (error) {
+    console.error('Error saving product:', error);
+    res.status(500).json({ error: 'Erro ao salvar produto' });
+  }
+});
+
+// Deletar produto
+app.delete('/api/admin/products/:id', checkOwnerAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    let deleted = false;
+    
+    productsStore.forEach((products, storeId) => {
+      const index = products.findIndex(p => p.id == id);
+      if (index >= 0) {
+        products.splice(index, 1);
+        productsStore.set(storeId, products);
+        deleted = true;
+      }
+    });
+    
+    if (deleted) {
+      res.json({ success: true, message: 'Produto deletado' });
+    } else {
+      res.status(404).json({ error: 'Produto não encontrado' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao deletar produto' });
+  }
+});
+
+// Listar todas as categorias
+app.get('/api/admin/categories', checkOwnerAuth, (req, res) => {
+  try {
+    const allCategories = [];
+    categoriesStore.forEach((categories) => {
+      categories.forEach(c => {
+        if (!allCategories.find(ac => ac.id === c.id)) {
+          allCategories.push(c);
+        }
+      });
+    });
+    res.json({ categories: allCategories, total: allCategories.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao listar categorias' });
+  }
+});
+
+// Criar/Atualizar categoria
+app.post('/api/admin/categories', checkOwnerAuth, (req, res) => {
+  try {
+    const category = req.body;
+    category.updated_at = new Date().toISOString();
+    
+    if (!category.id) {
+      category.id = Date.now();
+      category.created_at = new Date().toISOString();
+    }
+
+    if (!categoriesStore.has(1)) {
+      categoriesStore.set(1, []);
+    }
+    
+    const categories = categoriesStore.get(1);
+    const existingIndex = categories.findIndex(c => c.id === category.id);
+    
+    if (existingIndex >= 0) {
+      categories[existingIndex] = { ...categories[existingIndex], ...category };
+    } else {
+      categories.push(category);
+    }
+    
+    categoriesStore.set(1, categories);
+    res.json({ success: true, category });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao salvar categoria' });
+  }
+});
+
+// Deletar categoria
+app.delete('/api/admin/categories/:id', checkOwnerAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    let deleted = false;
+    
+    categoriesStore.forEach((categories, storeId) => {
+      const index = categories.findIndex(c => c.id == id);
+      if (index >= 0) {
+        categories.splice(index, 1);
+        categoriesStore.set(storeId, categories);
+        deleted = true;
+      }
+    });
+    
+    if (deleted) {
+      res.json({ success: true, message: 'Categoria deletada' });
+    } else {
+      res.status(404).json({ error: 'Categoria não encontrada' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao deletar categoria' });
+  }
+});
+
+// Listar todas as promoções
+app.get('/api/admin/promotions', checkOwnerAuth, (req, res) => {
+  try {
+    const promotions = Array.from(promotionsStore.values()).flat();
+    res.json({ promotions, total: promotions.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao listar promoções' });
+  }
+});
+
+// Criar/Atualizar promoção
+app.post('/api/admin/promotions', checkOwnerAuth, (req, res) => {
+  try {
+    const promotion = req.body;
+    promotion.updated_at = new Date().toISOString();
+    
+    if (!promotion.id) {
+      promotion.id = Date.now();
+      promotion.created_at = new Date().toISOString();
+    }
+
+    if (!promotionsStore.has(1)) {
+      promotionsStore.set(1, []);
+    }
+    
+    const promotions = promotionsStore.get(1);
+    const existingIndex = promotions.findIndex(p => p.id === promotion.id);
+    
+    if (existingIndex >= 0) {
+      promotions[existingIndex] = { ...promotions[existingIndex], ...promotion };
+    } else {
+      promotions.push(promotion);
+    }
+    
+    promotionsStore.set(1, promotions);
+    console.log(`✅ Promoção salva: ${promotion.name || promotion.product_name}`);
+    res.json({ success: true, promotion });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao salvar promoção' });
+  }
+});
+
+// Deletar promoção
+app.delete('/api/admin/promotions/:id', checkOwnerAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    let deleted = false;
+    
+    promotionsStore.forEach((promotions, storeId) => {
+      const index = promotions.findIndex(p => p.id == id);
+      if (index >= 0) {
+        promotions.splice(index, 1);
+        promotionsStore.set(storeId, promotions);
+        deleted = true;
+      }
+    });
+    
+    if (deleted) {
+      res.json({ success: true, message: 'Promoção deletada' });
+    } else {
+      res.status(404).json({ error: 'Promoção não encontrada' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao deletar promoção' });
+  }
+});
+
+// Estatísticas gerais do sistema
+app.get('/api/admin/stats', checkOwnerAuth, (req, res) => {
+  try {
+    let totalProducts = 0;
+    productsStore.forEach(products => {
+      totalProducts = Math.max(totalProducts, products.length);
+    });
+
+    let totalCategories = 0;
+    categoriesStore.forEach(categories => {
+      totalCategories = Math.max(totalCategories, categories.length);
+    });
+
+    const totalPromotions = Array.from(promotionsStore.values()).flat().length;
+    const totalStores = stores.size;
+
+    let totalSales = 0;
+    let totalRevenue = 0;
+    salesStore.forEach(sales => {
+      totalSales += sales.length;
+      totalRevenue += sales.reduce((sum, s) => sum + (s.total || 0), 0);
+    });
+
+    res.json({
+      totalProducts,
+      totalCategories,
+      totalPromotions,
+      totalStores,
+      totalSales,
+      totalRevenue
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao obter estatísticas' });
+  }
+});
+
 // Página principal do painel do proprietário (HTML embutido)
 app.get('/owner', (req, res) => {
   res.send(getOwnerDashboardHTML());
@@ -566,7 +844,7 @@ function getOwnerDashboardHTML() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🏪 Gol Supermarket - Painel do Proprietário</title>
+  <title>🏪 Gol Supermarket - Painel Administrativo</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -581,6 +859,12 @@ function getOwnerDashboardHTML() {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
     }
+    .tab-btn { transition: all 0.2s; }
+    .tab-btn.active { background: white; color: #1e3a5f; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .table-row:hover { background: #f8fafc; }
+    .modal-overlay { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -611,36 +895,38 @@ function getOwnerDashboardHTML() {
   <div id="dashboardScreen" class="hidden">
     <!-- Header -->
     <header class="gradient-bg text-white shadow-lg">
-      <div class="max-w-7xl mx-auto px-4 py-4">
+      <div class="max-w-7xl mx-auto px-4 py-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-4">
-            <span class="text-4xl">🏪</span>
+            <span class="text-3xl">🏪</span>
             <div>
-              <h1 class="text-2xl font-bold">Gol Supermarket</h1>
-              <p class="text-blue-200 text-sm">Painel Central - Todas as Lojas</p>
+              <h1 class="text-xl font-bold">Gol Supermarket</h1>
+              <p class="text-blue-200 text-xs">Painel Administrativo</p>
             </div>
           </div>
-          <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2 bg-green-500/30 px-3 py-1 rounded-full">
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 bg-green-500/30 px-2 py-1 rounded-full">
               <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
               <span class="text-xs font-medium text-green-200">TEMPO REAL</span>
             </div>
-            <div class="text-right">
-              <p class="text-sm text-blue-200">Atualiza a cada 10s</p>
-              <p id="lastUpdate" class="font-semibold">--</p>
-            </div>
-            <button onclick="loadData()" class="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition-colors" title="Atualizar agora">
-              🔄
-            </button>
-            <button onclick="logout()" class="p-2 bg-red-500/80 rounded-lg hover:bg-red-600 transition-colors" title="Sair">
-              🚪
-            </button>
+            <span id="lastUpdate" class="text-xs text-blue-200">--</span>
+            <button onclick="refreshCurrentTab()" class="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition-colors" title="Atualizar">🔄</button>
+            <button onclick="logout()" class="p-2 bg-red-500/80 rounded-lg hover:bg-red-600 transition-colors" title="Sair">🚪</button>
           </div>
+        </div>
+        <!-- Navigation Tabs -->
+        <div class="flex gap-2 mt-3">
+          <button onclick="switchTab('dashboard')" class="tab-btn active px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📊 Dashboard</button>
+          <button onclick="switchTab('products')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📦 Produtos</button>
+          <button onclick="switchTab('categories')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📁 Categorias</button>
+          <button onclick="switchTab('promotions')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">🏷️ Promoções</button>
         </div>
       </div>
     </header>
 
     <main class="max-w-7xl mx-auto px-4 py-6">
+      <!-- DASHBOARD TAB -->
+      <div id="tab-dashboard" class="tab-content active">
       <!-- Period Filter -->
       <div class="bg-white rounded-xl p-4 mb-6 card-shadow flex flex-wrap items-center gap-4">
         <span class="font-medium text-gray-700">📅 Período:</span>
@@ -721,6 +1007,72 @@ function getOwnerDashboardHTML() {
         </div>
       </div>
 
+      </div><!-- End Dashboard Tab -->
+
+      <!-- PRODUCTS TAB -->
+      <div id="tab-products" class="tab-content">
+        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+          <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-gray-800">📦 Gerenciar Produtos</h2>
+            <div class="flex gap-2">
+              <input type="text" id="productSearch" placeholder="Buscar produto..." 
+                class="px-4 py-2 border rounded-lg w-64" oninput="filterProducts()">
+              <button onclick="openProductModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                ➕ Novo Produto
+              </button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Código</th>
+                  <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Nome</th>
+                  <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Categoria</th>
+                  <th class="px-4 py-3 text-right text-sm font-medium text-gray-600">Preço</th>
+                  <th class="px-4 py-3 text-center text-sm font-medium text-gray-600">Status</th>
+                  <th class="px-4 py-3 text-center text-sm font-medium text-gray-600">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="productsTableBody" class="divide-y divide-gray-100">
+                <tr><td colspan="6" class="text-center py-8 text-gray-400">Carregando produtos...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="productsPagination" class="flex justify-center gap-2 mt-4"></div>
+        </div>
+      </div>
+
+      <!-- CATEGORIES TAB -->
+      <div id="tab-categories" class="tab-content">
+        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+          <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-gray-800">📁 Gerenciar Categorias</h2>
+            <button onclick="openCategoryModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              ➕ Nova Categoria
+            </button>
+          </div>
+          <div id="categoriesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="text-center py-8 text-gray-400 col-span-full">Carregando categorias...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROMOTIONS TAB -->
+      <div id="tab-promotions" class="tab-content">
+        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+          <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-gray-800">🏷️ Gerenciar Promoções</h2>
+            <button onclick="openPromotionModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              ➕ Nova Promoção
+            </button>
+          </div>
+          <div id="promotionsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="text-center py-8 text-gray-400 col-span-full">Carregando promoções...</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Store Detail Modal -->
       <div id="storeModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
         <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden mx-4">
@@ -731,9 +1083,158 @@ function getOwnerDashboardHTML() {
             </div>
             <button onclick="closeStoreModal()" class="p-2 hover:bg-white/20 rounded-lg">✕</button>
           </div>
-          <div id="modalContent" class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-            <!-- Modal content will be inserted here -->
+          <div id="modalContent" class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]"></div>
+        </div>
+      </div>
+
+      <!-- Product Modal -->
+      <div id="productModal" class="fixed inset-0 modal-overlay hidden items-center justify-center z-50">
+        <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden mx-4">
+          <div class="gradient-bg text-white px-6 py-4 flex justify-between items-center">
+            <h2 id="productModalTitle" class="text-xl font-bold">Novo Produto</h2>
+            <button onclick="closeProductModal()" class="p-2 hover:bg-white/20 rounded-lg">✕</button>
           </div>
+          <form id="productForm" class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]" onsubmit="saveProduct(event)">
+            <input type="hidden" id="productId">
+            <div class="grid grid-cols-2 gap-4">
+              <div class="col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Nome do Produto *</label>
+                <input type="text" id="productName" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Código de Barras</label>
+                <input type="text" id="productBarcode" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+                <input type="text" id="productSku" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+                <select id="productCategory" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value="">Selecione...</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Departamento</label>
+                <input type="text" id="productDepartment" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Preço de Venda *</label>
+                <input type="number" step="0.01" id="productPrice" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Preço de Custo</label>
+                <input type="number" step="0.01" id="productCost" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Estoque</label>
+                <input type="number" id="productStock" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Unidade</label>
+                <select id="productUnit" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value="unit">Unidade</option>
+                  <option value="kg">Kg</option>
+                  <option value="g">Gramas</option>
+                  <option value="l">Litros</option>
+                  <option value="ml">ML</option>
+                </select>
+              </div>
+              <div class="col-span-2 flex items-center gap-4">
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" id="productActive" checked class="w-5 h-5">
+                  <span class="text-sm text-gray-700">Ativo</span>
+                </label>
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" id="productRequiresScale" class="w-5 h-5">
+                  <span class="text-sm text-gray-700">Requer Balança</span>
+                </label>
+              </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+              <button type="button" onclick="closeProductModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Salvar Produto</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Category Modal -->
+      <div id="categoryModal" class="fixed inset-0 modal-overlay hidden items-center justify-center z-50">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-hidden mx-4">
+          <div class="gradient-bg text-white px-6 py-4 flex justify-between items-center">
+            <h2 id="categoryModalTitle" class="text-xl font-bold">Nova Categoria</h2>
+            <button onclick="closeCategoryModal()" class="p-2 hover:bg-white/20 rounded-lg">✕</button>
+          </div>
+          <form id="categoryForm" class="p-6" onsubmit="saveCategory(event)">
+            <input type="hidden" id="categoryId">
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Nome da Categoria *</label>
+                <input type="text" id="categoryName" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                <textarea id="categoryDescription" rows="3" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"></textarea>
+              </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+              <button type="button" onclick="closeCategoryModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Salvar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Promotion Modal -->
+      <div id="promotionModal" class="fixed inset-0 modal-overlay hidden items-center justify-center z-50">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden mx-4">
+          <div class="gradient-bg text-white px-6 py-4 flex justify-between items-center">
+            <h2 id="promotionModalTitle" class="text-xl font-bold">Nova Promoção</h2>
+            <button onclick="closePromotionModal()" class="p-2 hover:bg-white/20 rounded-lg">✕</button>
+          </div>
+          <form id="promotionForm" class="p-6" onsubmit="savePromotion(event)">
+            <input type="hidden" id="promotionId">
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Nome da Promoção *</label>
+                <input type="text" id="promotionName" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Produto (Barcode ou ID)</label>
+                <input type="text" id="promotionProduct" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Digite o código de barras ou ID">
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Preço Original</label>
+                  <input type="number" step="0.01" id="promotionRegularPrice" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Preço Promocional *</label>
+                  <input type="number" step="0.01" id="promotionPrice" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Data Início</label>
+                  <input type="date" id="promotionStartDate" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Data Fim</label>
+                  <input type="date" id="promotionEndDate" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <input type="checkbox" id="promotionActive" checked class="w-5 h-5">
+                <label class="text-sm text-gray-700">Promoção Ativa</label>
+              </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+              <button type="button" onclick="closePromotionModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Salvar</button>
+            </div>
+          </form>
         </div>
       </div>
     </main>
@@ -1042,6 +1543,438 @@ function getOwnerDashboardHTML() {
     document.getElementById('storeModal').addEventListener('click', (e) => {
       if (e.target.id === 'storeModal') closeStoreModal();
     });
+
+    // =====================
+    // TAB NAVIGATION
+    // =====================
+    let currentTab = 'dashboard';
+    let allProducts = [];
+    let allCategories = [];
+    let allPromotions = [];
+    let productPage = 1;
+    const productsPerPage = 20;
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.textContent.toLowerCase().includes(tab)) {
+          btn.classList.add('active');
+        }
+      });
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.getElementById('tab-' + tab).classList.add('active');
+      
+      // Load tab data
+      if (tab === 'products') loadProducts();
+      else if (tab === 'categories') loadCategories();
+      else if (tab === 'promotions') loadPromotions();
+      else if (tab === 'dashboard') loadData();
+    }
+
+    function refreshCurrentTab() {
+      switchTab(currentTab);
+    }
+
+    // =====================
+    // PRODUCTS MANAGEMENT
+    // =====================
+    async function loadProducts() {
+      try {
+        const response = await fetch(API_BASE + '/api/admin/products?password=' + encodeURIComponent(password));
+        const data = await response.json();
+        allProducts = data.products || [];
+        renderProducts();
+        await loadCategoriesForSelect();
+      } catch (error) {
+        console.error('Error loading products:', error);
+      }
+    }
+
+    function filterProducts() {
+      productPage = 1;
+      renderProducts();
+    }
+
+    function renderProducts() {
+      const search = document.getElementById('productSearch').value.toLowerCase();
+      const filtered = allProducts.filter(p => 
+        (p.name && p.name.toLowerCase().includes(search)) ||
+        (p.barcode && p.barcode.includes(search)) ||
+        (p.sku && p.sku.includes(search))
+      );
+      
+      const start = (productPage - 1) * productsPerPage;
+      const paged = filtered.slice(start, start + productsPerPage);
+      const tbody = document.getElementById('productsTableBody');
+      
+      if (paged.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-400">Nenhum produto encontrado</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = paged.map(p => {
+        const category = allCategories.find(c => c.id === p.category_id);
+        return '<tr class="table-row hover:bg-gray-50">' +
+          '<td class="px-4 py-3"><span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded">' + (p.barcode || p.sku || p.id) + '</span></td>' +
+          '<td class="px-4 py-3 font-medium">' + (p.name || 'Sem nome') + '</td>' +
+          '<td class="px-4 py-3 text-sm text-gray-600">' + (category ? category.name : '-') + '</td>' +
+          '<td class="px-4 py-3 text-right font-bold text-green-600">$' + (p.price || 0).toFixed(2) + '</td>' +
+          '<td class="px-4 py-3 text-center">' +
+            (p.is_active !== false ? '<span class="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">Ativo</span>' : '<span class="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700">Inativo</span>') +
+          '</td>' +
+          '<td class="px-4 py-3 text-center">' +
+            '<button onclick="editProduct(' + p.id + ')" class="text-blue-600 hover:text-blue-800 mr-2">✏️</button>' +
+            '<button onclick="deleteProduct(' + p.id + ')" class="text-red-600 hover:text-red-800">🗑️</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+
+      // Pagination
+      const totalPages = Math.ceil(filtered.length / productsPerPage);
+      const pagination = document.getElementById('productsPagination');
+      pagination.innerHTML = '';
+      if (totalPages > 1) {
+        for (let i = 1; i <= totalPages; i++) {
+          const btn = document.createElement('button');
+          btn.className = 'px-3 py-1 rounded ' + (i === productPage ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300');
+          btn.textContent = i;
+          btn.onclick = () => { productPage = i; renderProducts(); };
+          pagination.appendChild(btn);
+        }
+      }
+    }
+
+    async function loadCategoriesForSelect() {
+      try {
+        const response = await fetch(API_BASE + '/api/admin/categories?password=' + encodeURIComponent(password));
+        const data = await response.json();
+        allCategories = data.categories || [];
+        const select = document.getElementById('productCategory');
+        select.innerHTML = '<option value="">Selecione...</option>' +
+          allCategories.map(c => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+      } catch (error) {
+        console.error('Error loading categories:', error);
+      }
+    }
+
+    function openProductModal(product = null) {
+      document.getElementById('productModalTitle').textContent = product ? 'Editar Produto' : 'Novo Produto';
+      document.getElementById('productId').value = product ? product.id : '';
+      document.getElementById('productName').value = product ? product.name : '';
+      document.getElementById('productBarcode').value = product ? product.barcode || '' : '';
+      document.getElementById('productSku').value = product ? product.sku || '' : '';
+      document.getElementById('productCategory').value = product ? product.category_id || '' : '';
+      document.getElementById('productDepartment').value = product ? product.department || '' : '';
+      document.getElementById('productPrice').value = product ? product.price : '';
+      document.getElementById('productCost').value = product ? product.cost || '' : '';
+      document.getElementById('productStock').value = product ? product.stock || '' : '';
+      document.getElementById('productUnit').value = product ? product.unit || 'unit' : 'unit';
+      document.getElementById('productActive').checked = product ? product.is_active !== false : true;
+      document.getElementById('productRequiresScale').checked = product ? product.requires_scale : false;
+      
+      document.getElementById('productModal').classList.remove('hidden');
+      document.getElementById('productModal').classList.add('flex');
+    }
+
+    function closeProductModal() {
+      document.getElementById('productModal').classList.add('hidden');
+      document.getElementById('productModal').classList.remove('flex');
+    }
+
+    function editProduct(id) {
+      const product = allProducts.find(p => p.id === id);
+      if (product) openProductModal(product);
+    }
+
+    async function saveProduct(e) {
+      e.preventDefault();
+      const product = {
+        id: document.getElementById('productId').value ? parseInt(document.getElementById('productId').value) : null,
+        name: document.getElementById('productName').value,
+        barcode: document.getElementById('productBarcode').value || null,
+        sku: document.getElementById('productSku').value || null,
+        category_id: document.getElementById('productCategory').value ? parseInt(document.getElementById('productCategory').value) : null,
+        department: document.getElementById('productDepartment').value || null,
+        price: parseFloat(document.getElementById('productPrice').value) || 0,
+        cost: parseFloat(document.getElementById('productCost').value) || 0,
+        stock: parseInt(document.getElementById('productStock').value) || 0,
+        unit: document.getElementById('productUnit').value,
+        is_active: document.getElementById('productActive').checked,
+        requires_scale: document.getElementById('productRequiresScale').checked
+      };
+
+      try {
+        const response = await fetch(API_BASE + '/api/admin/products?password=' + encodeURIComponent(password), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(product)
+        });
+        
+        if (response.ok) {
+          closeProductModal();
+          loadProducts();
+          alert('Produto salvo com sucesso!');
+        } else {
+          alert('Erro ao salvar produto');
+        }
+      } catch (error) {
+        console.error('Error saving product:', error);
+        alert('Erro ao salvar produto');
+      }
+    }
+
+    async function deleteProduct(id) {
+      if (!confirm('Tem certeza que deseja excluir este produto?')) return;
+      
+      try {
+        const response = await fetch(API_BASE + '/api/admin/products/' + id + '?password=' + encodeURIComponent(password), {
+          method: 'DELETE'
+        });
+        
+        if (response.ok) {
+          loadProducts();
+          alert('Produto excluído');
+        }
+      } catch (error) {
+        console.error('Error deleting product:', error);
+      }
+    }
+
+    // =====================
+    // CATEGORIES MANAGEMENT
+    // =====================
+    async function loadCategories() {
+      try {
+        const response = await fetch(API_BASE + '/api/admin/categories?password=' + encodeURIComponent(password));
+        const data = await response.json();
+        allCategories = data.categories || [];
+        renderCategories();
+      } catch (error) {
+        console.error('Error loading categories:', error);
+      }
+    }
+
+    function renderCategories() {
+      const grid = document.getElementById('categoriesGrid');
+      if (allCategories.length === 0) {
+        grid.innerHTML = '<div class="text-center py-8 text-gray-400 col-span-full">Nenhuma categoria cadastrada</div>';
+        return;
+      }
+      
+      grid.innerHTML = allCategories.map(c => 
+        '<div class="bg-gray-50 rounded-xl p-4 border-2 border-gray-200 hover:border-blue-400">' +
+          '<div class="flex justify-between items-start">' +
+            '<div>' +
+              '<h4 class="font-bold text-gray-800">📁 ' + c.name + '</h4>' +
+              (c.description ? '<p class="text-sm text-gray-500 mt-1">' + c.description + '</p>' : '') +
+            '</div>' +
+            '<div class="flex gap-1">' +
+              '<button onclick="editCategory(' + c.id + ')" class="p-1 hover:bg-gray-200 rounded">✏️</button>' +
+              '<button onclick="deleteCategory(' + c.id + ')" class="p-1 hover:bg-red-100 rounded">🗑️</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      ).join('');
+    }
+
+    function openCategoryModal(category = null) {
+      document.getElementById('categoryModalTitle').textContent = category ? 'Editar Categoria' : 'Nova Categoria';
+      document.getElementById('categoryId').value = category ? category.id : '';
+      document.getElementById('categoryName').value = category ? category.name : '';
+      document.getElementById('categoryDescription').value = category ? category.description || '' : '';
+      
+      document.getElementById('categoryModal').classList.remove('hidden');
+      document.getElementById('categoryModal').classList.add('flex');
+    }
+
+    function closeCategoryModal() {
+      document.getElementById('categoryModal').classList.add('hidden');
+      document.getElementById('categoryModal').classList.remove('flex');
+    }
+
+    function editCategory(id) {
+      const category = allCategories.find(c => c.id === id);
+      if (category) openCategoryModal(category);
+    }
+
+    async function saveCategory(e) {
+      e.preventDefault();
+      const category = {
+        id: document.getElementById('categoryId').value ? parseInt(document.getElementById('categoryId').value) : null,
+        name: document.getElementById('categoryName').value,
+        description: document.getElementById('categoryDescription').value || null
+      };
+
+      try {
+        const response = await fetch(API_BASE + '/api/admin/categories?password=' + encodeURIComponent(password), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(category)
+        });
+        
+        if (response.ok) {
+          closeCategoryModal();
+          loadCategories();
+          alert('Categoria salva!');
+        }
+      } catch (error) {
+        console.error('Error saving category:', error);
+      }
+    }
+
+    async function deleteCategory(id) {
+      if (!confirm('Tem certeza que deseja excluir esta categoria?')) return;
+      
+      try {
+        await fetch(API_BASE + '/api/admin/categories/' + id + '?password=' + encodeURIComponent(password), {
+          method: 'DELETE'
+        });
+        loadCategories();
+      } catch (error) {
+        console.error('Error deleting category:', error);
+      }
+    }
+
+    // =====================
+    // PROMOTIONS MANAGEMENT
+    // =====================
+    async function loadPromotions() {
+      try {
+        const response = await fetch(API_BASE + '/api/admin/promotions?password=' + encodeURIComponent(password));
+        const data = await response.json();
+        allPromotions = data.promotions || [];
+        renderPromotions();
+      } catch (error) {
+        console.error('Error loading promotions:', error);
+      }
+    }
+
+    function renderPromotions() {
+      const grid = document.getElementById('promotionsGrid');
+      if (allPromotions.length === 0) {
+        grid.innerHTML = '<div class="text-center py-8 text-gray-400 col-span-full">' +
+          '<p class="text-4xl mb-2">🏷️</p>' +
+          '<p>Nenhuma promoção cadastrada</p>' +
+          '<p class="text-sm">Clique em "Nova Promoção" para criar</p>' +
+        '</div>';
+        return;
+      }
+      
+      grid.innerHTML = allPromotions.map(p => {
+        const isActive = p.is_active !== false;
+        const now = new Date();
+        const startDate = p.start_date ? new Date(p.start_date) : null;
+        const endDate = p.end_date ? new Date(p.end_date) : null;
+        const isInPeriod = (!startDate || now >= startDate) && (!endDate || now <= endDate);
+        
+        return '<div class="bg-gradient-to-br ' + (isActive && isInPeriod ? 'from-green-50 to-green-100 border-green-300' : 'from-gray-50 to-gray-100 border-gray-300') + ' rounded-xl p-4 border-2">' +
+          '<div class="flex justify-between items-start mb-3">' +
+            '<div>' +
+              '<span class="text-2xl">🏷️</span>' +
+              '<h4 class="font-bold text-gray-800">' + (p.name || 'Promoção') + '</h4>' +
+            '</div>' +
+            '<div class="flex gap-1">' +
+              '<button onclick="editPromotion(' + p.id + ')" class="p-1 hover:bg-white/50 rounded">✏️</button>' +
+              '<button onclick="deletePromotion(' + p.id + ')" class="p-1 hover:bg-red-100 rounded">🗑️</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="space-y-2">' +
+            (p.regular_price ? '<p class="text-sm text-gray-500 line-through">De: $' + p.regular_price.toFixed(2) + '</p>' : '') +
+            '<p class="text-2xl font-bold text-green-600">$' + (p.promotional_price || p.price || 0).toFixed(2) + '</p>' +
+            (p.start_date || p.end_date ? '<p class="text-xs text-gray-500">' + 
+              (p.start_date ? new Date(p.start_date).toLocaleDateString('pt-BR') : '') + 
+              ' - ' + 
+              (p.end_date ? new Date(p.end_date).toLocaleDateString('pt-BR') : '') + 
+            '</p>' : '') +
+            '<span class="inline-block px-2 py-1 rounded-full text-xs ' + (isActive && isInPeriod ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700') + '">' +
+              (isActive && isInPeriod ? '✓ Ativa' : 'Inativa') +
+            '</span>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function openPromotionModal(promotion = null) {
+      document.getElementById('promotionModalTitle').textContent = promotion ? 'Editar Promoção' : 'Nova Promoção';
+      document.getElementById('promotionId').value = promotion ? promotion.id : '';
+      document.getElementById('promotionName').value = promotion ? promotion.name || '' : '';
+      document.getElementById('promotionProduct').value = promotion ? promotion.product_id || promotion.barcode || '' : '';
+      document.getElementById('promotionRegularPrice').value = promotion ? promotion.regular_price || '' : '';
+      document.getElementById('promotionPrice').value = promotion ? promotion.promotional_price || promotion.price || '' : '';
+      document.getElementById('promotionStartDate').value = promotion && promotion.start_date ? promotion.start_date.split('T')[0] : '';
+      document.getElementById('promotionEndDate').value = promotion && promotion.end_date ? promotion.end_date.split('T')[0] : '';
+      document.getElementById('promotionActive').checked = promotion ? promotion.is_active !== false : true;
+      
+      document.getElementById('promotionModal').classList.remove('hidden');
+      document.getElementById('promotionModal').classList.add('flex');
+    }
+
+    function closePromotionModal() {
+      document.getElementById('promotionModal').classList.add('hidden');
+      document.getElementById('promotionModal').classList.remove('flex');
+    }
+
+    function editPromotion(id) {
+      const promotion = allPromotions.find(p => p.id === id);
+      if (promotion) openPromotionModal(promotion);
+    }
+
+    async function savePromotion(e) {
+      e.preventDefault();
+      const promotion = {
+        id: document.getElementById('promotionId').value ? parseInt(document.getElementById('promotionId').value) : null,
+        name: document.getElementById('promotionName').value,
+        product_id: document.getElementById('promotionProduct').value || null,
+        regular_price: parseFloat(document.getElementById('promotionRegularPrice').value) || null,
+        promotional_price: parseFloat(document.getElementById('promotionPrice').value) || 0,
+        price: parseFloat(document.getElementById('promotionPrice').value) || 0,
+        start_date: document.getElementById('promotionStartDate').value || null,
+        end_date: document.getElementById('promotionEndDate').value || null,
+        is_active: document.getElementById('promotionActive').checked
+      };
+
+      try {
+        const response = await fetch(API_BASE + '/api/admin/promotions?password=' + encodeURIComponent(password), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(promotion)
+        });
+        
+        if (response.ok) {
+          closePromotionModal();
+          loadPromotions();
+          alert('Promoção salva!');
+        }
+      } catch (error) {
+        console.error('Error saving promotion:', error);
+      }
+    }
+
+    async function deletePromotion(id) {
+      if (!confirm('Tem certeza que deseja excluir esta promoção?')) return;
+      
+      try {
+        await fetch(API_BASE + '/api/admin/promotions/' + id + '?password=' + encodeURIComponent(password), {
+          method: 'DELETE'
+        });
+        loadPromotions();
+      } catch (error) {
+        console.error('Error deleting promotion:', error);
+      }
+    }
+
+    // Close modals on outside click
+    ['productModal', 'categoryModal', 'promotionModal'].forEach(modalId => {
+      document.getElementById(modalId).addEventListener('click', (e) => {
+        if (e.target.id === modalId) {
+          document.getElementById(modalId).classList.add('hidden');
+          document.getElementById(modalId).classList.remove('flex');
+        }
+      });
+    });
   </script>
 </body>
 </html>`;
@@ -1080,4 +2013,5 @@ if (require.main === module) {
     console.log('');
   });
 }
+
 
