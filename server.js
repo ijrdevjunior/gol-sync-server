@@ -2250,21 +2250,28 @@ function getOwnerDashboardHTML() {
                 </div>
               </div>
               
-              <!-- Seletor de Produto para outros tipos (Multi-buy, etc) -->
+              <!-- Seletor de Produtos (múltiplos) -->
               <div id="productSelectorSection" class="mt-4 border-t pt-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">🔍 Buscar Produto para Promoção</label>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  🔍 Buscar Produtos para Promoção
+                  <span class="text-xs text-gray-500 ml-2">(você pode adicionar múltiplos produtos)</span>
+                </label>
                 <div class="relative">
                   <input type="text" id="singleProductSearch" 
                     class="w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500" 
                     placeholder="Buscar por nome, código de barras ou SKU..."
-                    oninput="searchSingleProduct(this.value)"
-                    onfocus="showSingleProductResults()">
+                    oninput="searchMultiProducts(this.value)"
+                    onfocus="showMultiProductResults()">
                   <div id="singleProductResults" class="absolute z-50 w-full bg-white border-2 border-blue-200 rounded-lg shadow-xl mt-1 max-h-60 overflow-y-auto hidden">
                     <!-- Resultados aparecem aqui -->
                   </div>
                 </div>
-                <div id="selectedSingleProduct" class="mt-2 hidden">
-                  <!-- Produto selecionado aparece aqui -->
+                <!-- Lista de produtos selecionados -->
+                <div id="selectedMultiProducts" class="mt-3">
+                  <div id="selectedProductsListPromo" class="flex flex-wrap gap-2">
+                    <!-- Produtos selecionados aparecem aqui -->
+                  </div>
+                  <p id="selectedProductsCountPromo" class="text-xs text-gray-500 mt-2">0 produtos selecionados</p>
                 </div>
               </div>
               
@@ -3824,10 +3831,57 @@ function getOwnerDashboardHTML() {
         };
         const config = typeConfig[promoType] || typeConfig['fixed_price'];
         
+        // Buscar produtos associados a esta promoção
+        let productsList = [];
+        const promoProductIds = p.product_ids || p.mix_match_products || [];
+        
+        // Se tem product_id único, adicionar
+        if (p.product_id) {
+          const singleProduct = allProducts.find(prod => prod.id == p.product_id || prod.barcode == p.product_id);
+          if (singleProduct) {
+            productsList.push(singleProduct);
+          }
+        }
+        
+        // Se tem array de produtos
+        if (promoProductIds && promoProductIds.length > 0) {
+          promoProductIds.forEach(pid => {
+            const foundProduct = allProducts.find(prod => prod.id == pid || prod.barcode == pid);
+            if (foundProduct && !productsList.find(x => x.id === foundProduct.id)) {
+              productsList.push(foundProduct);
+            }
+          });
+        }
+        
+        // HTML dos produtos associados
+        let productsHtml = '';
+        if (productsList.length > 0) {
+          const displayProducts = productsList.slice(0, 3);
+          const remaining = productsList.length - 3;
+          productsHtml = '<div class="mt-3 pt-3 border-t border-gray-200">' +
+            '<p class="text-xs text-gray-500 font-semibold mb-2">📦 Produtos (' + productsList.length + '):</p>' +
+            '<div class="space-y-1">' +
+              displayProducts.map(prod => 
+                '<div class="flex items-center gap-2 text-xs bg-white/60 rounded px-2 py-1">' +
+                  '<span class="flex-1 truncate font-medium text-gray-700">' + (prod.name || 'Produto') + '</span>' +
+                  '<span class="font-mono text-gray-500 text-[10px]">' + (prod.barcode || prod.id) + '</span>' +
+                '</div>'
+              ).join('') +
+              (remaining > 0 ? '<p class="text-[10px] text-gray-400 text-center">+' + remaining + ' mais...</p>' : '') +
+            '</div>' +
+          '</div>';
+        } else if (p.product_id || p.product_barcode) {
+          // Fallback: mostrar o ID/barcode mesmo sem encontrar o produto
+          productsHtml = '<div class="mt-3 pt-3 border-t border-gray-200">' +
+            '<p class="text-xs text-gray-500 font-semibold mb-1">📦 Produto:</p>' +
+            '<p class="text-xs font-mono text-gray-600 bg-white/60 rounded px-2 py-1">' + (p.product_barcode || p.product_id || 'N/A') + '</p>' +
+          '</div>';
+        }
+        
         // Gerar conteúdo específico do tipo
         let promoContent = '';
         if (promoType === 'fixed_price') {
-          promoContent = (p.regular_price ? '<p class="text-sm text-gray-500 line-through">De: $' + p.regular_price.toFixed(2) + '</p>' : '') +
+          promoContent = (p.regular_price ? '<p class="text-sm text-gray-500 line-through">De: $' + Number(p.regular_price).toFixed(2) + '</p>' : '') +
             '<p class="text-2xl font-bold text-green-600">$' + (p.promotional_price || p.price || 0).toFixed(2) + '</p>';
         } else if (promoType === 'multi_buy') {
           promoContent = '<div class="bg-green-100 rounded-lg p-2 text-center">' +
@@ -3847,12 +3901,10 @@ function getOwnerDashboardHTML() {
             '<p class="text-sm text-orange-700">de desconto</p>' +
           '</div>';
         } else if (promoType === 'mix_match') {
-          const productCount = (p.mix_match_products || []).length;
           promoContent = '<div class="bg-pink-100 rounded-lg p-2 text-center">' +
             '<p class="text-lg font-bold text-pink-700">Escolha ' + (p.mix_match_qty || 3) + '</p>' +
             '<p class="text-2xl font-bold text-pink-600">por $' + (p.mix_match_price || 0).toFixed(2) + '</p>' +
             (p.mix_match_group ? '<p class="text-xs text-pink-600">' + p.mix_match_group + '</p>' : '') +
-            (productCount > 0 ? '<p class="text-xs text-pink-500 mt-1">' + productCount + ' produtos elegíveis</p>' : '') +
           '</div>';
         }
         
@@ -3862,20 +3914,21 @@ function getOwnerDashboardHTML() {
         
         return '<div class="bg-gradient-to-br ' + bgGradient + ' rounded-xl p-4 border-2">' +
           '<div class="flex justify-between items-start mb-3">' +
-            '<div>' +
+            '<div class="flex-1 min-w-0">' +
               '<div class="flex items-center gap-2 mb-1">' +
                 '<span class="text-xl">' + config.icon + '</span>' +
                 '<span class="text-xs px-2 py-0.5 bg-' + config.color + '-200 text-' + config.color + '-800 rounded-full">' + config.label + '</span>' +
               '</div>' +
-              '<h4 class="font-bold text-gray-800">' + (p.name || 'Promoção') + '</h4>' +
+              '<h4 class="font-bold text-gray-800 truncate">' + (p.name || 'Promoção') + '</h4>' +
             '</div>' +
-            '<div class="flex gap-1">' +
+            '<div class="flex gap-1 flex-shrink-0">' +
               '<button onclick="editPromotion(' + p.id + ')" class="p-1 hover:bg-white/50 rounded">✏️</button>' +
               '<button onclick="deletePromotion(' + p.id + ')" class="p-1 hover:bg-red-100 rounded">🗑️</button>' +
             '</div>' +
           '</div>' +
           '<div class="space-y-2">' +
             promoContent +
+            productsHtml +
             (p.start_date || p.end_date ? '<p class="text-xs text-gray-500 text-center mt-2">' + 
               (p.start_date ? new Date(p.start_date).toLocaleDateString('pt-BR') : '...') + 
               ' até ' + 
@@ -4072,8 +4125,11 @@ function getOwnerDashboardHTML() {
       '</div>';
     }
 
-    // Busca para produto único (Multi-buy, Preço fixo, etc)
-    function searchSingleProduct(query) {
+    // Array para armazenar múltiplos produtos selecionados para promoções
+    let selectedMultiProducts = [];
+
+    // Busca para múltiplos produtos
+    function searchMultiProducts(query) {
       clearTimeout(promoSearchTimeout);
       const resultsDiv = document.getElementById('singleProductResults');
       
@@ -4088,66 +4144,124 @@ function getOwnerDashboardHTML() {
           (p.name && p.name.toLowerCase().includes(searchLower)) ||
           (p.barcode && p.barcode.includes(query)) ||
           (p.sku && p.sku.includes(query))
-        ).slice(0, 8);
+        ).slice(0, 10);
         
         if (results.length === 0) {
           resultsDiv.innerHTML = '<div class="p-4 text-center text-gray-400">Nenhum produto encontrado</div>';
         } else {
-          resultsDiv.innerHTML = results.map(p => 
-            '<div class="flex items-center justify-between p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0" onclick="selectSingleProduct(' + p.id + ')">' +
+          resultsDiv.innerHTML = results.map(p => {
+            const isSelected = selectedMultiProducts.some(sp => sp.id === p.id);
+            return '<div class="flex items-center justify-between p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0 ' + (isSelected ? 'bg-green-50' : '') + '" onclick="toggleMultiProduct(' + p.id + ')">' +
               '<div class="flex-1">' +
                 '<p class="font-medium text-gray-800 truncate">' + (p.name || 'Sem nome') + '</p>' +
                 '<p class="text-xs text-gray-500 font-mono">' + (p.barcode || p.sku || p.id) + '</p>' +
               '</div>' +
-              '<span class="text-green-600 font-bold">$' + (p.price || 0).toFixed(2) + '</span>' +
-            '</div>'
-          ).join('');
+              '<div class="flex items-center gap-2">' +
+                '<span class="text-green-600 font-bold">$' + (p.price || 0).toFixed(2) + '</span>' +
+                (isSelected 
+                  ? '<span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm">✓</span>'
+                  : '<span class="w-6 h-6 bg-gray-200 text-gray-400 rounded-full flex items-center justify-center text-sm">+</span>') +
+              '</div>' +
+            '</div>';
+          }).join('');
         }
         
         resultsDiv.classList.remove('hidden');
       }, 300);
     }
 
-    function showSingleProductResults() {
+    function showMultiProductResults() {
       const query = document.getElementById('singleProductSearch').value;
       if (query && query.length >= 2) {
         document.getElementById('singleProductResults').classList.remove('hidden');
       }
     }
 
-    function selectSingleProduct(productId) {
+    function toggleMultiProduct(productId) {
       const product = allProducts.find(p => p.id === productId);
       if (!product) return;
       
-      selectedSingleProduct = product;
-      document.getElementById('promotionProduct').value = product.barcode || product.id;
-      document.getElementById('promotionRegularPrice').value = product.price || '';
+      const existingIndex = selectedMultiProducts.findIndex(p => p.id === productId);
       
-      // Mostrar produto selecionado
-      const selectedDiv = document.getElementById('selectedSingleProduct');
-      selectedDiv.innerHTML = 
-        '<div class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">' +
-          '<div class="flex-1">' +
-            '<p class="font-medium text-gray-800">' + product.name + '</p>' +
-            '<p class="text-xs text-gray-500 font-mono">' + (product.barcode || product.sku || product.id) + '</p>' +
-          '</div>' +
-          '<div class="flex items-center gap-3">' +
-            '<span class="text-green-600 font-bold text-lg">$' + (product.price || 0).toFixed(2) + '</span>' +
-            '<button type="button" onclick="clearSingleProduct()" class="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-full">✕</button>' +
-          '</div>' +
-        '</div>';
-      selectedDiv.classList.remove('hidden');
+      if (existingIndex >= 0) {
+        // Remover
+        selectedMultiProducts.splice(existingIndex, 1);
+      } else {
+        // Adicionar
+        selectedMultiProducts.push({
+          id: product.id,
+          name: product.name,
+          barcode: product.barcode,
+          sku: product.sku,
+          price: product.price
+        });
+      }
       
-      // Esconder resultados e limpar busca
-      document.getElementById('singleProductResults').classList.add('hidden');
-      document.getElementById('singleProductSearch').value = '';
+      renderMultiProductsList();
+      // Re-buscar para atualizar os checkmarks
+      searchMultiProducts(document.getElementById('singleProductSearch').value);
+      
+      // Atualizar o campo oculto com o primeiro produto (para compatibilidade)
+      if (selectedMultiProducts.length > 0) {
+        document.getElementById('promotionProduct').value = selectedMultiProducts[0].barcode || selectedMultiProducts[0].id;
+        document.getElementById('promotionRegularPrice').value = selectedMultiProducts[0].price || '';
+      } else {
+        document.getElementById('promotionProduct').value = '';
+      }
+    }
+
+    function removeMultiProduct(productId) {
+      selectedMultiProducts = selectedMultiProducts.filter(p => p.id !== productId);
+      renderMultiProductsList();
+      
+      // Atualizar o campo oculto
+      if (selectedMultiProducts.length > 0) {
+        document.getElementById('promotionProduct').value = selectedMultiProducts[0].barcode || selectedMultiProducts[0].id;
+        document.getElementById('promotionRegularPrice').value = selectedMultiProducts[0].price || '';
+      } else {
+        document.getElementById('promotionProduct').value = '';
+      }
+    }
+
+    function renderMultiProductsList() {
+      const listDiv = document.getElementById('selectedProductsListPromo');
+      const countSpan = document.getElementById('selectedProductsCountPromo');
+      
+      countSpan.textContent = selectedMultiProducts.length + ' produto' + (selectedMultiProducts.length !== 1 ? 's' : '') + ' selecionado' + (selectedMultiProducts.length !== 1 ? 's' : '');
+      
+      if (selectedMultiProducts.length === 0) {
+        listDiv.innerHTML = '<p class="text-center text-gray-400 text-sm py-2">Nenhum produto adicionado</p>';
+        return;
+      }
+      
+      listDiv.innerHTML = selectedMultiProducts.map(p => 
+        '<div class="inline-flex items-center gap-2 bg-blue-50 border border-blue-300 rounded-full pl-3 pr-1 py-1 shadow-sm">' +
+          '<div class="max-w-[180px]">' +
+            '<p class="text-sm font-medium text-gray-800 truncate">' + (p.name || 'Produto') + '</p>' +
+            '<p class="text-xs text-gray-500 font-mono">' + (p.barcode || p.sku || p.id) + '</p>' +
+          '</div>' +
+          '<button type="button" onclick="removeMultiProduct(' + p.id + ')" class="w-6 h-6 bg-red-100 hover:bg-red-200 text-red-600 rounded-full flex items-center justify-center text-xs font-bold">×</button>' +
+        '</div>'
+      ).join('');
+    }
+
+    // Funções de compatibilidade (mantidas para não quebrar código existente)
+    function searchSingleProduct(query) {
+      searchMultiProducts(query);
+    }
+
+    function showSingleProductResults() {
+      showMultiProductResults();
+    }
+
+    function selectSingleProduct(productId) {
+      toggleMultiProduct(productId);
     }
 
     function clearSingleProduct() {
-      selectedSingleProduct = null;
+      selectedMultiProducts = [];
       document.getElementById('promotionProduct').value = '';
-      document.getElementById('selectedSingleProduct').classList.add('hidden');
-      document.getElementById('selectedSingleProduct').innerHTML = '';
+      renderMultiProductsList();
     }
 
     // Fechar dropdowns ao clicar fora
@@ -4191,15 +4305,9 @@ function getOwnerDashboardHTML() {
       document.getElementById('promotionActive').checked = promotion ? promotion.is_active !== false : true;
       
       // Limpar seleções anteriores
-      if (!promotion) {
-        selectedPromoProducts = [];
-        selectedSingleProduct = null;
-        renderSelectedProducts();
-        document.getElementById('selectedSingleProduct').innerHTML = '';
-        document.getElementById('selectedSingleProduct').classList.add('hidden');
-        document.getElementById('promoProductSearch').value = '';
-        document.getElementById('singleProductSearch').value = '';
-      }
+      selectedPromoProducts = [];
+      selectedMultiProducts = [];
+      document.getElementById('singleProductSearch').value = '';
       
       // Carregar tipo de promoção
       const promoType = promotion?.promo_type || 'fixed_price';
@@ -4220,34 +4328,45 @@ function getOwnerDashboardHTML() {
         document.getElementById('mixMatchQty').value = promotion.mix_match_qty || 3;
         document.getElementById('mixMatchPrice').value = promotion.mix_match_price || '';
         document.getElementById('mixMatchGroup').value = promotion.mix_match_group || '';
-        // Carregar produtos selecionados do Mix & Match
-        selectedPromoProducts = [];
-        if (promotion.mix_match_products && promotion.mix_match_products.length > 0) {
-          promotion.mix_match_products.forEach(barcode => {
-            const product = allProducts.find(p => p.barcode === barcode || p.id == barcode);
-            if (product) {
-              selectedPromoProducts.push({
-                id: product.id,
-                name: product.name,
-                barcode: product.barcode,
-                sku: product.sku,
-                price: product.price
-              });
-            }
-          });
-        }
-        renderSelectedProducts();
         updateMixMatchPreview();
       }
       
-      // Carregar produto único para outros tipos de promoção
-      clearSingleProduct();
-      if (['fixed_price', 'multi_buy', 'buy_get', 'percent_off'].includes(promoType) && promotion && promotion.product_barcode) {
-        const product = allProducts.find(p => p.barcode === promotion.product_barcode || p.id == promotion.product_barcode);
-        if (product) {
-          selectSingleProduct(product.id);
+      // Carregar produtos associados à promoção (para qualquer tipo)
+      if (promotion) {
+        // Primeiro, tentar carregar de product_ids (novo formato com múltiplos)
+        let productIdsToLoad = [];
+        
+        if (promotion.product_ids && Array.isArray(promotion.product_ids) && promotion.product_ids.length > 0) {
+          productIdsToLoad = promotion.product_ids;
+        } else if (promotion.mix_match_products && Array.isArray(promotion.mix_match_products) && promotion.mix_match_products.length > 0) {
+          productIdsToLoad = promotion.mix_match_products;
+        } else if (promotion.product_id) {
+          productIdsToLoad = [promotion.product_id];
+        } else if (promotion.product_barcode) {
+          productIdsToLoad = [promotion.product_barcode];
         }
+        
+        // Carregar cada produto
+        productIdsToLoad.forEach(pid => {
+          const product = allProducts.find(p => p.id == pid || p.barcode == pid);
+          if (product && !selectedMultiProducts.find(x => x.id === product.id)) {
+            selectedMultiProducts.push({
+              id: product.id,
+              name: product.name,
+              barcode: product.barcode,
+              sku: product.sku,
+              price: product.price
+            });
+          }
+        });
+        
+        // Copiar para Mix & Match também
+        selectedPromoProducts = [...selectedMultiProducts];
       }
+      
+      // Renderizar as listas
+      renderMultiProductsList();
+      renderSelectedProducts();
       
       document.getElementById('promotionModal').classList.remove('hidden');
       document.getElementById('promotionModal').classList.add('flex');
@@ -4268,10 +4387,25 @@ function getOwnerDashboardHTML() {
       
       const promoType = currentPromoType;
       
+      // Validar se tem pelo menos um produto selecionado (para tipos que não são Mix & Match)
+      if (promoType !== 'mix_match' && selectedMultiProducts.length === 0) {
+        alert('Por favor, selecione pelo menos um produto para a promoção!');
+        return;
+      }
+      
+      // Para Mix & Match, validar produtos do Mix & Match
+      if (promoType === 'mix_match' && selectedPromoProducts.length === 0) {
+        alert('Por favor, selecione os produtos elegíveis para o Mix and Match!');
+        return;
+      }
+      
       const promotion = {
         id: document.getElementById('promotionId').value ? parseInt(document.getElementById('promotionId').value) : null,
         name: document.getElementById('promotionName').value,
-        product_id: document.getElementById('promotionProduct').value || null,
+        product_id: selectedMultiProducts.length > 0 ? selectedMultiProducts[0].id : (document.getElementById('promotionProduct').value || null),
+        product_barcode: selectedMultiProducts.length > 0 ? selectedMultiProducts[0].barcode : null,
+        // NOVO: Array com todos os IDs de produtos associados
+        product_ids: selectedMultiProducts.map(p => p.id),
         promo_type: promoType,
         start_date: document.getElementById('promotionStartDate').value || null,
         end_date: document.getElementById('promotionEndDate').value || null,
@@ -4299,7 +4433,10 @@ function getOwnerDashboardHTML() {
         promotion.mix_match_group = document.getElementById('mixMatchGroup').value || '';
         // Usar os produtos selecionados na interface
         promotion.mix_match_products = selectedPromoProducts.map(p => p.barcode || p.id);
+        promotion.product_ids = selectedPromoProducts.map(p => p.id); // Também salvar no product_ids
       }
+
+      console.log('📦 Salvando promoção com produtos:', promotion.product_ids);
 
       try {
         const response = await fetch(API_BASE + '/api/admin/promotions?password=' + encodeURIComponent(password), {
@@ -4311,7 +4448,7 @@ function getOwnerDashboardHTML() {
         if (response.ok) {
           closePromotionModal();
           loadPromotions();
-          alert('Promoção salva!');
+          alert('Promoção salva com ' + (promotion.product_ids?.length || 1) + ' produto(s)!');
         }
       } catch (error) {
         console.error('Error saving promotion:', error);
