@@ -560,7 +560,7 @@ app.get('/api/sync/stats', (req, res) => {
 });
 
 // Push products from a store
-app.post('/api/sync/products/push', (req, res) => {
+app.post('/api/sync/products/push', async (req, res) => {
   try {
     const { storeId, products, categories, timestamp, isLastBatch } = req.body;
 
@@ -588,6 +588,31 @@ app.post('/api/sync/products/push', (req, res) => {
       const mergedProducts = Array.from(productMap.values());
       productsStore.set(storeId, mergedProducts);
       console.log(`✅ Received ${products.length} products from store ${storeId} (Total: ${mergedProducts.length})`);
+      
+      // ✅ SALVAR NO SUPABASE (se configurado)
+      if (useSupabase && supabase) {
+        console.log(`📦 Salvando ${products.length} produtos no Supabase...`);
+        // Salvar em lotes de 100 para evitar timeout
+        const batchSize = 100;
+        for (let i = 0; i < products.length; i += batchSize) {
+          const batch = products.slice(i, i + batchSize).map(p => ({
+            ...p,
+            store_id: storeId,
+            updated_at: new Date().toISOString()
+          }));
+          try {
+            const { error } = await supabase
+              .from('products')
+              .upsert(batch, { onConflict: 'id' });
+            if (error) {
+              console.error('Supabase batch error:', error.message);
+            }
+          } catch (e) {
+            console.error('Supabase save error:', e.message);
+          }
+        }
+        console.log(`✅ Produtos salvos no Supabase!`);
+      }
     }
 
     // Store categories (merge with existing)
@@ -596,6 +621,20 @@ app.post('/api/sync/products/push', (req, res) => {
         categoriesStore.set(cat.id, cat);
       });
       console.log(`✅ Received ${categories.length} categories from store ${storeId} (Total: ${categoriesStore.size})`);
+      
+      // ✅ SALVAR CATEGORIAS NO SUPABASE
+      if (useSupabase && supabase) {
+        for (const cat of categories) {
+          try {
+            await supabase.from('categories').upsert({
+              ...cat,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+          } catch (e) {
+            console.error('Supabase category error:', e.message);
+          }
+        }
+      }
     }
 
     const currentProducts = productsStore.get(storeId) || [];
@@ -647,6 +686,145 @@ const checkOwnerAuth = (req, res, next) => {
   }
   next();
 };
+
+// =====================================
+// MIGRAÇÃO DE DADOS PARA SUPABASE
+// =====================================
+
+// Endpoint para migrar todos os produtos em memória para o Supabase
+app.post('/api/admin/migrate-to-cloud', checkOwnerAuth, async (req, res) => {
+  if (!useSupabase || !supabase) {
+    return res.status(400).json({ 
+      error: 'Supabase não está configurado',
+      message: 'Configure SUPABASE_URL e SUPABASE_KEY no Vercel'
+    });
+  }
+  
+  try {
+    let totalProducts = 0;
+    let totalCategories = 0;
+    let totalPromotions = 0;
+    let errors = [];
+    
+    // Migrar produtos
+    console.log('🚀 Iniciando migração para Supabase...');
+    
+    for (const [storeId, products] of productsStore) {
+      console.log(`📦 Migrando ${products.length} produtos da loja ${storeId}...`);
+      
+      const batchSize = 100;
+      for (let i = 0; i < products.length; i += batchSize) {
+        const batch = products.slice(i, i + batchSize).map(p => ({
+          ...p,
+          store_id: storeId,
+          updated_at: new Date().toISOString()
+        }));
+        
+        const { error } = await supabase
+          .from('products')
+          .upsert(batch, { onConflict: 'id' });
+        
+        if (error) {
+          errors.push(`Produtos batch ${i}: ${error.message}`);
+        } else {
+          totalProducts += batch.length;
+        }
+      }
+    }
+    
+    // Migrar categorias
+    for (const [id, category] of categoriesStore) {
+      const { error } = await supabase
+        .from('categories')
+        .upsert({
+          ...category,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      
+      if (error) {
+        errors.push(`Categoria ${id}: ${error.message}`);
+      } else {
+        totalCategories++;
+      }
+    }
+    
+    // Migrar promoções
+    for (const [id, promo] of promotionsStore) {
+      const { error } = await supabase
+        .from('promotions')
+        .upsert({
+          ...promo,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      
+      if (error) {
+        errors.push(`Promoção ${id}: ${error.message}`);
+      } else {
+        totalPromotions++;
+      }
+    }
+    
+    console.log(`✅ Migração concluída!`);
+    console.log(`   - Produtos: ${totalProducts}`);
+    console.log(`   - Categorias: ${totalCategories}`);
+    console.log(`   - Promoções: ${totalPromotions}`);
+    
+    res.json({
+      success: true,
+      message: 'Migração concluída!',
+      migrated: {
+        products: totalProducts,
+        categories: totalCategories,
+        promotions: totalPromotions
+      },
+      errors: errors.length > 0 ? errors : null
+    });
+    
+  } catch (error) {
+    console.error('Erro na migração:', error);
+    res.status(500).json({ error: 'Erro na migração', message: error.message });
+  }
+});
+
+// Verificar status do Supabase
+app.get('/api/admin/cloud-status', checkOwnerAuth, async (req, res) => {
+  const status = {
+    supabaseConfigured: useSupabase,
+    supabaseConnected: false,
+    productsInMemory: 0,
+    productsInCloud: 0,
+    categoriesInMemory: categoriesStore.size,
+    categoriesInCloud: 0
+  };
+  
+  // Contar produtos em memória
+  productsStore.forEach(products => {
+    status.productsInMemory += products.length;
+  });
+  
+  // Verificar Supabase
+  if (useSupabase && supabase) {
+    try {
+      const { count: productCount, error: pError } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true });
+      
+      const { count: categoryCount, error: cError } = await supabase
+        .from('categories')
+        .select('*', { count: 'exact', head: true });
+      
+      if (!pError && !cError) {
+        status.supabaseConnected = true;
+        status.productsInCloud = productCount || 0;
+        status.categoriesInCloud = categoryCount || 0;
+      }
+    } catch (e) {
+      console.error('Supabase status check error:', e.message);
+    }
+  }
+  
+  res.json(status);
+});
 
 // Relatório consolidado de todas as lojas
 app.get('/api/owner/report', checkOwnerAuth, (req, res) => {
@@ -867,18 +1045,57 @@ app.get('/api/owner/compare', checkOwnerAuth, (req, res) => {
 // =====================================
 
 // Listar todos os produtos (com paginação do servidor)
-app.get('/api/admin/products', checkOwnerAuth, (req, res) => {
+app.get('/api/admin/products', checkOwnerAuth, async (req, res) => {
   try {
     const { page = 1, limit = 0, search = '' } = req.query;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     
-    // Usar Map para evitar duplicatas de forma eficiente (O(n) ao invés de O(n²))
+    let allProducts = [];
+    
+    // ✅ BUSCAR DO SUPABASE PRIMEIRO (se configurado)
+    if (useSupabase && supabase) {
+      console.log('📦 Buscando produtos do Supabase...');
+      try {
+        let query = supabase.from('products').select('*', { count: 'exact' });
+        
+        // Aplicar busca se fornecida
+        if (search) {
+          query = query.or(`name.ilike.%${search}%,barcode.ilike.%${search}%,sku.ilike.%${search}%`);
+        }
+        
+        // Paginação
+        if (limitNum > 0) {
+          const start = (pageNum - 1) * limitNum;
+          query = query.range(start, start + limitNum - 1);
+        }
+        
+        const { data, error, count } = await query;
+        
+        if (!error && data) {
+          console.log(`✅ ${data.length} produtos carregados do Supabase (total: ${count})`);
+          return res.json({ 
+            products: data, 
+            total: count || data.length,
+            page: pageNum,
+            limit: limitNum,
+            totalPages: limitNum > 0 ? Math.ceil((count || data.length) / limitNum) : 1,
+            source: 'supabase'
+          });
+        } else if (error) {
+          console.error('Supabase query error:', error.message);
+        }
+      } catch (e) {
+        console.error('Supabase error:', e.message);
+      }
+    }
+    
+    // FALLBACK: Usar dados em memória
+    console.log('📦 Usando dados em memória (fallback)...');
     const productsMap = new Map();
     
     productsStore.forEach((products, storeId) => {
       products.forEach(p => {
-        // Usar ID como chave principal
         const key = p.id || p.barcode || p.sku;
         if (key && !productsMap.has(key)) {
           productsMap.set(key, { ...p, source_store_id: storeId });
@@ -886,7 +1103,7 @@ app.get('/api/admin/products', checkOwnerAuth, (req, res) => {
       });
     });
     
-    let allProducts = Array.from(productsMap.values());
+    allProducts = Array.from(productsMap.values());
     
     // Aplicar busca no servidor se fornecida
     if (search) {
@@ -906,14 +1123,15 @@ app.get('/api/admin/products', checkOwnerAuth, (req, res) => {
       allProducts = allProducts.slice(start, start + limitNum);
     }
     
-    console.log('📦 Produtos carregados:', allProducts.length, 'de', total, 'total');
+    console.log('📦 Produtos carregados da memória:', allProducts.length, 'de', total, 'total');
     
     res.json({ 
       products: allProducts, 
       total: total,
       page: pageNum,
       limit: limitNum,
-      totalPages: limitNum > 0 ? Math.ceil(total / limitNum) : 1
+      totalPages: limitNum > 0 ? Math.ceil(total / limitNum) : 1,
+      source: 'memory'
     });
   } catch (error) {
     console.error('Error listing products:', error);
@@ -1256,11 +1474,12 @@ function getOwnerDashboardHTML() {
           </div>
         </div>
         <!-- Navigation Tabs -->
-        <div class="flex gap-2 mt-3">
+        <div class="flex gap-2 mt-3 flex-wrap">
           <button onclick="switchTab('dashboard')" class="tab-btn active px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📊 Dashboard</button>
           <button onclick="switchTab('products')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📦 Produtos</button>
           <button onclick="switchTab('categories')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📁 Categorias</button>
           <button onclick="switchTab('promotions')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">🏷️ Promoções</button>
+          <button onclick="switchTab('cloud')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">☁️ Nuvem</button>
         </div>
       </div>
     </header>
@@ -1489,6 +1708,51 @@ function getOwnerDashboardHTML() {
           </div>
           <div id="promotionsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div class="text-center py-8 text-gray-400 col-span-full">Carregando promoções...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB NUVEM / CLOUD -->
+      <div id="tab-cloud" class="tab-content hidden">
+        <div class="max-w-2xl mx-auto">
+          <!-- Status Card -->
+          <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">☁️ Status da Nuvem</h2>
+            <div id="cloudStatus" class="space-y-4">
+              <div class="text-center py-8">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p class="text-gray-500 mt-2">Verificando conexão...</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Migration Card -->
+          <div class="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-6 text-white card-shadow mb-6">
+            <h2 class="text-xl font-bold mb-2">🚀 Migrar Dados para a Nuvem</h2>
+            <p class="text-blue-100 mb-4">
+              Envie todos os produtos, categorias e promoções do sistema local para o banco de dados na nuvem (Supabase).
+              Assim você poderá acessar os dados mesmo quando o sistema local estiver fechado.
+            </p>
+            <button onclick="migrateToCloud()" id="migrateBtn" class="w-full py-3 bg-white text-blue-600 rounded-lg font-bold hover:bg-blue-50 transition-colors">
+              ☁️ Migrar Agora
+            </button>
+            <div id="migrateProgress" class="hidden mt-4">
+              <div class="bg-white/20 rounded-full h-2">
+                <div id="migrateProgressBar" class="bg-white h-2 rounded-full transition-all" style="width: 0%"></div>
+              </div>
+              <p id="migrateStatus" class="text-center text-sm mt-2">Migrando...</p>
+            </div>
+          </div>
+          
+          <!-- Info Card -->
+          <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+            <h3 class="font-bold text-yellow-800 mb-2">ℹ️ Importante</h3>
+            <ul class="text-sm text-yellow-700 space-y-2">
+              <li>• O Supabase precisa estar configurado no Vercel (SUPABASE_URL e SUPABASE_KEY)</li>
+              <li>• A migração envia os dados que estão em memória no servidor</li>
+              <li>• Para sincronizar novos produtos, use o botão "Sincronizar" no sistema local</li>
+              <li>• Após a migração, os dados ficam salvos permanentemente na nuvem</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -2355,10 +2619,118 @@ function getOwnerDashboardHTML() {
       else if (tab === 'categories') loadCategories();
       else if (tab === 'promotions') loadPromotions();
       else if (tab === 'dashboard') loadData();
+      else if (tab === 'cloud') loadCloudStatus();
     }
 
     function refreshCurrentTab() {
       switchTab(currentTab);
+    }
+
+    // =====================
+    // CLOUD / NUVEM MANAGEMENT
+    // =====================
+    
+    async function loadCloudStatus() {
+      const statusDiv = document.getElementById('cloudStatus');
+      
+      try {
+        const response = await fetch('/api/admin/cloud-status?password=' + sessionStorage.getItem('token'));
+        const status = await response.json();
+        
+        const supabaseStatus = status.supabaseConnected 
+          ? '<span class="text-green-600 font-bold">✅ Conectado</span>'
+          : status.supabaseConfigured 
+            ? '<span class="text-yellow-600 font-bold">⚠️ Configurado mas não conectado</span>'
+            : '<span class="text-red-600 font-bold">❌ Não configurado</span>';
+        
+        statusDiv.innerHTML = 
+          '<div class="grid grid-cols-2 gap-4">' +
+            '<div class="bg-gray-50 rounded-lg p-4">' +
+              '<p class="text-sm text-gray-500">Status Supabase</p>' +
+              '<p class="text-lg">' + supabaseStatus + '</p>' +
+            '</div>' +
+            '<div class="bg-gray-50 rounded-lg p-4">' +
+              '<p class="text-sm text-gray-500">Dados em Memória</p>' +
+              '<p class="text-lg font-bold text-blue-600">' + status.productsInMemory.toLocaleString() + ' produtos</p>' +
+              '<p class="text-xs text-gray-400">' + status.categoriesInMemory + ' categorias</p>' +
+            '</div>' +
+            '<div class="bg-gray-50 rounded-lg p-4">' +
+              '<p class="text-sm text-gray-500">Dados na Nuvem</p>' +
+              '<p class="text-lg font-bold text-green-600">' + status.productsInCloud.toLocaleString() + ' produtos</p>' +
+              '<p class="text-xs text-gray-400">' + status.categoriesInCloud + ' categorias</p>' +
+            '</div>' +
+            '<div class="bg-gray-50 rounded-lg p-4">' +
+              '<p class="text-sm text-gray-500">Sincronização</p>' +
+              '<p class="text-lg">' + (status.productsInCloud >= status.productsInMemory 
+                ? '<span class="text-green-600">✅ Atualizado</span>' 
+                : '<span class="text-yellow-600">⚠️ Pendente</span>') + '</p>' +
+            '</div>' +
+          '</div>';
+          
+        // Mostrar alerta se não configurado
+        if (!status.supabaseConfigured) {
+          statusDiv.innerHTML += 
+            '<div class="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">' +
+              '<p class="text-red-700 font-medium">⚠️ Supabase não configurado!</p>' +
+              '<p class="text-sm text-red-600 mt-1">Configure as variáveis SUPABASE_URL e SUPABASE_KEY no Vercel para salvar dados permanentemente.</p>' +
+            '</div>';
+        }
+        
+      } catch (error) {
+        statusDiv.innerHTML = '<div class="text-center py-4 text-red-500">Erro ao carregar status: ' + error.message + '</div>';
+      }
+    }
+    
+    async function migrateToCloud() {
+      const btn = document.getElementById('migrateBtn');
+      const progress = document.getElementById('migrateProgress');
+      const progressBar = document.getElementById('migrateProgressBar');
+      const status = document.getElementById('migrateStatus');
+      
+      if (!confirm('Deseja migrar todos os dados para a nuvem?\\n\\nIsso vai enviar produtos, categorias e promoções para o Supabase.')) {
+        return;
+      }
+      
+      btn.disabled = true;
+      btn.textContent = 'Migrando...';
+      progress.classList.remove('hidden');
+      progressBar.style.width = '30%';
+      status.textContent = 'Enviando dados para a nuvem...';
+      
+      try {
+        const response = await fetch('/api/admin/migrate-to-cloud', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Owner-Password': sessionStorage.getItem('token')
+          }
+        });
+        
+        progressBar.style.width = '100%';
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          status.textContent = '✅ Migração concluída!';
+          showToast('Migração concluída! ' + result.migrated.products + ' produtos enviados.', 'success');
+          
+          // Recarregar status
+          setTimeout(() => {
+            loadCloudStatus();
+            progress.classList.add('hidden');
+            btn.disabled = false;
+            btn.textContent = '☁️ Migrar Agora';
+          }, 2000);
+        } else {
+          throw new Error(result.error || result.message);
+        }
+        
+      } catch (error) {
+        status.textContent = '❌ Erro: ' + error.message;
+        showToast('Erro na migração: ' + error.message, 'error');
+        btn.disabled = false;
+        btn.textContent = '☁️ Tentar Novamente';
+      }
     }
 
     // =====================
