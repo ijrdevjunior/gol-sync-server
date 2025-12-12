@@ -3167,7 +3167,7 @@ function getOwnerDashboardHTML() {
       document.getElementById('productTab-' + tab).classList.remove('hidden');
     }
 
-    function openProductModal(product = null) {
+    async function openProductModal(product = null) {
       document.getElementById('productModalTitle').textContent = product ? 'Editar Produto' : 'Novo Produto';
       document.getElementById('productId').value = product ? product.id : '';
       document.getElementById('productName').value = product ? product.name : '';
@@ -3214,6 +3214,17 @@ function getOwnerDashboardHTML() {
       // Carregar promoções do produto
       currentEditingProductId = product ? product.id : null;
       if (product) {
+        // Garantir que as promoções estejam carregadas antes de filtrar
+        if (allPromotions.length === 0) {
+          try {
+            const response = await fetch(API_BASE + '/api/admin/promotions?password=' + encodeURIComponent(password));
+            const data = await response.json();
+            allPromotions = data.promotions || [];
+            console.log('📦 Promoções carregadas:', allPromotions.length);
+          } catch (e) {
+            console.error('Erro ao carregar promoções:', e);
+          }
+        }
         loadProductPromotions(product.id);
       } else {
         // Limpar lista de promoções para novo produto
