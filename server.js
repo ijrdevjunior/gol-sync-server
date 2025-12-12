@@ -1653,50 +1653,192 @@ function getOwnerDashboardHTML() {
 
       <!-- Promotion Modal -->
       <div id="promotionModal" class="fixed inset-0 modal-overlay hidden items-center justify-center z-50">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden mx-4">
+        <div class="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] overflow-hidden mx-4">
           <div class="gradient-bg text-white px-6 py-4 flex justify-between items-center">
             <h2 id="promotionModalTitle" class="text-xl font-bold">Nova Promoção</h2>
             <button onclick="closePromotionModal()" class="p-2 hover:bg-white/20 rounded-lg">✕</button>
           </div>
-          <form id="promotionForm" class="p-6" onsubmit="savePromotion(event)">
+          <form id="promotionForm" class="p-6 overflow-y-auto max-h-[calc(90vh-100px)]" onsubmit="savePromotion(event)">
             <input type="hidden" id="promotionId">
             <div class="space-y-4">
+              <!-- Nome da Promoção -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Nome da Promoção *</label>
-                <input type="text" id="promotionName" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <input type="text" id="promotionName" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Ex: Refrigerante 2 por $4">
               </div>
+              
+              <!-- Produto -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Produto (Barcode ou ID)</label>
-                <input type="text" id="promotionProduct" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Digite o código de barras ou ID">
+                <input type="text" id="promotionProduct" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Digite o código de barras">
               </div>
+              
+              <!-- Tipo de Promoção -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">🏷️ Tipo de Promoção</label>
+                <div class="grid grid-cols-1 gap-2">
+                  <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors promo-type-option" onclick="selectPromoType('fixed_price')">
+                    <input type="radio" name="promoType" value="fixed_price" checked class="mr-3">
+                    <div>
+                      <span class="font-medium">💲 Preço Fixo</span>
+                      <p class="text-xs text-gray-500">Ex: De $2.99 por $1.99</p>
+                    </div>
+                  </label>
+                  <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer hover:bg-green-50 transition-colors promo-type-option" onclick="selectPromoType('multi_buy')">
+                    <input type="radio" name="promoType" value="multi_buy" class="mr-3">
+                    <div>
+                      <span class="font-medium">📦 Leve X por $Y</span>
+                      <p class="text-xs text-gray-500">Ex: Leve 2 por $4.00</p>
+                    </div>
+                  </label>
+                  <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer hover:bg-purple-50 transition-colors promo-type-option" onclick="selectPromoType('buy_get')">
+                    <input type="radio" name="promoType" value="buy_get" class="mr-3">
+                    <div>
+                      <span class="font-medium">🎁 Compre X Leve Y</span>
+                      <p class="text-xs text-gray-500">Ex: Compre 2 Leve 3</p>
+                    </div>
+                  </label>
+                  <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer hover:bg-orange-50 transition-colors promo-type-option" onclick="selectPromoType('percent_off')">
+                    <input type="radio" name="promoType" value="percent_off" class="mr-3">
+                    <div>
+                      <span class="font-medium">📊 Desconto %</span>
+                      <p class="text-xs text-gray-500">Ex: 20% de desconto</p>
+                    </div>
+                  </label>
+                  <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer hover:bg-pink-50 transition-colors promo-type-option" onclick="selectPromoType('mix_match')">
+                    <input type="radio" name="promoType" value="mix_match" class="mr-3">
+                    <div>
+                      <span class="font-medium">🎨 Mix and Match</span>
+                      <p class="text-xs text-gray-500">Ex: Escolha 3 produtos por $10</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+              
+              <!-- Campos para Preço Fixo -->
+              <div id="fixedPriceFields" class="promo-fields">
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Preço Original</label>
+                    <input type="number" step="0.01" id="promotionRegularPrice" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="2.99">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Preço Promocional *</label>
+                    <input type="number" step="0.01" id="promotionPrice" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="1.99">
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Campos para Leve X por $Y -->
+              <div id="multiBuyFields" class="promo-fields hidden">
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div class="grid grid-cols-3 gap-3 items-end">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Leve</label>
+                      <input type="number" id="multiBuyQty" min="2" value="2" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 text-center text-lg font-bold">
+                    </div>
+                    <div class="text-center pb-2">
+                      <span class="text-2xl font-bold text-green-600">por</span>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Valor $</label>
+                      <input type="number" step="0.01" id="multiBuyPrice" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 text-center text-lg font-bold" placeholder="4.00">
+                    </div>
+                  </div>
+                  <div class="mt-3 text-center">
+                    <span id="multiBuyPreview" class="text-sm text-green-700 font-medium">Preço unitário na promoção: $2.00</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Campos para Compre X Leve Y -->
+              <div id="buyGetFields" class="promo-fields hidden">
+                <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div class="grid grid-cols-3 gap-3 items-end">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Compre</label>
+                      <input type="number" id="buyGetBuy" min="1" value="2" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-center text-lg font-bold">
+                    </div>
+                    <div class="text-center pb-2">
+                      <span class="text-2xl font-bold text-purple-600">Leve</span>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Unidades</label>
+                      <input type="number" id="buyGetGet" min="2" value="3" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-center text-lg font-bold">
+                    </div>
+                  </div>
+                  <div class="mt-3 text-center">
+                    <span id="buyGetPreview" class="text-sm text-purple-700 font-medium">Cliente paga 2, leva 3 (1 grátis!)</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Campos para Desconto % -->
+              <div id="percentOffFields" class="promo-fields hidden">
+                <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div class="flex items-center justify-center gap-3">
+                    <input type="number" id="percentOffValue" min="1" max="100" value="20" class="w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-center text-2xl font-bold">
+                    <span class="text-3xl font-bold text-orange-600">%</span>
+                    <span class="text-lg text-gray-600">de desconto</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Campos para Mix and Match -->
+              <div id="mixMatchFields" class="promo-fields hidden">
+                <div class="bg-pink-50 border border-pink-200 rounded-lg p-4">
+                  <div class="text-center mb-3">
+                    <span class="text-2xl">🎨</span>
+                    <p class="text-sm text-pink-700 font-medium">Misture e Combine - Escolha produtos de um grupo</p>
+                  </div>
+                  <div class="grid grid-cols-3 gap-3 items-end mb-3">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Escolha</label>
+                      <input type="number" id="mixMatchQty" min="2" value="3" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 text-center text-lg font-bold">
+                    </div>
+                    <div class="text-center pb-2">
+                      <span class="text-xl font-bold text-pink-600">itens por</span>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Valor $</label>
+                      <input type="number" step="0.01" id="mixMatchPrice" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 text-center text-lg font-bold" placeholder="10.00">
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">📁 Categoria ou Grupo de Produtos</label>
+                    <input type="text" id="mixMatchGroup" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500" placeholder="Ex: Laticínios, Refrigerantes, Frutas...">
+                  </div>
+                  <div class="mt-3">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">🏷️ Produtos incluídos (barcodes separados por vírgula)</label>
+                    <textarea id="mixMatchProducts" rows="2" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 text-sm font-mono" placeholder="7891234567890, 7899876543210, ..."></textarea>
+                  </div>
+                  <div class="mt-3 text-center">
+                    <span id="mixMatchPreview" class="text-sm text-pink-700 font-medium">Escolha 3 itens e pague apenas $10.00!</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Datas -->
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Preço Original</label>
-                  <input type="number" step="0.01" id="promotionRegularPrice" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Preço Promocional *</label>
-                  <input type="number" step="0.01" id="promotionPrice" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                </div>
-              </div>
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Data Início</label>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">📅 Data Início</label>
                   <input type="date" id="promotionStartDate" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Data Fim</label>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">📅 Data Fim</label>
                   <input type="date" id="promotionEndDate" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <input type="checkbox" id="promotionActive" checked class="w-5 h-5">
-                <label class="text-sm text-gray-700">Promoção Ativa</label>
+              
+              <!-- Ativa -->
+              <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <input type="checkbox" id="promotionActive" checked class="w-5 h-5 text-green-600">
+                <label class="text-sm text-gray-700 font-medium">✅ Promoção Ativa</label>
               </div>
             </div>
             <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
               <button type="button" onclick="closePromotionModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
-              <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Salvar</button>
+              <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">💾 Salvar Promoção</button>
             </div>
           </form>
         </div>
@@ -2762,10 +2904,60 @@ function getOwnerDashboardHTML() {
         const endDate = p.end_date ? new Date(p.end_date) : null;
         const isInPeriod = (!startDate || now >= startDate) && (!endDate || now <= endDate);
         
-        return '<div class="bg-gradient-to-br ' + (isActive && isInPeriod ? 'from-green-50 to-green-100 border-green-300' : 'from-gray-50 to-gray-100 border-gray-300') + ' rounded-xl p-4 border-2">' +
+        // Determinar tipo e cor
+        const promoType = p.promo_type || 'fixed_price';
+        const typeConfig = {
+          'fixed_price': { icon: '💲', color: 'blue', label: 'Preço Fixo' },
+          'multi_buy': { icon: '📦', color: 'green', label: 'Leve X por $Y' },
+          'buy_get': { icon: '🎁', color: 'purple', label: 'Compre X Leve Y' },
+          'percent_off': { icon: '📊', color: 'orange', label: 'Desconto %' },
+          'mix_match': { icon: '🎨', color: 'pink', label: 'Mix and Match' }
+        };
+        const config = typeConfig[promoType] || typeConfig['fixed_price'];
+        
+        // Gerar conteúdo específico do tipo
+        let promoContent = '';
+        if (promoType === 'fixed_price') {
+          promoContent = (p.regular_price ? '<p class="text-sm text-gray-500 line-through">De: $' + p.regular_price.toFixed(2) + '</p>' : '') +
+            '<p class="text-2xl font-bold text-green-600">$' + (p.promotional_price || p.price || 0).toFixed(2) + '</p>';
+        } else if (promoType === 'multi_buy') {
+          promoContent = '<div class="bg-green-100 rounded-lg p-2 text-center">' +
+            '<p class="text-lg font-bold text-green-700">Leve ' + (p.multi_buy_qty || 2) + '</p>' +
+            '<p class="text-2xl font-bold text-green-600">por $' + (p.multi_buy_price || 0).toFixed(2) + '</p>' +
+            '<p class="text-xs text-green-600">($' + ((p.multi_buy_price || 0) / (p.multi_buy_qty || 2)).toFixed(2) + ' cada)</p>' +
+          '</div>';
+        } else if (promoType === 'buy_get') {
+          promoContent = '<div class="bg-purple-100 rounded-lg p-2 text-center">' +
+            '<p class="text-lg font-bold text-purple-700">Compre ' + (p.buy_qty || 2) + '</p>' +
+            '<p class="text-2xl font-bold text-purple-600">Leve ' + (p.get_qty || 3) + '</p>' +
+            '<p class="text-xs text-purple-600">(' + ((p.get_qty || 3) - (p.buy_qty || 2)) + ' GRÁTIS!)</p>' +
+          '</div>';
+        } else if (promoType === 'percent_off') {
+          promoContent = '<div class="bg-orange-100 rounded-lg p-2 text-center">' +
+            '<p class="text-3xl font-bold text-orange-600">' + (p.percent_off || 20) + '%</p>' +
+            '<p class="text-sm text-orange-700">de desconto</p>' +
+          '</div>';
+        } else if (promoType === 'mix_match') {
+          const productCount = (p.mix_match_products || []).length;
+          promoContent = '<div class="bg-pink-100 rounded-lg p-2 text-center">' +
+            '<p class="text-lg font-bold text-pink-700">Escolha ' + (p.mix_match_qty || 3) + '</p>' +
+            '<p class="text-2xl font-bold text-pink-600">por $' + (p.mix_match_price || 0).toFixed(2) + '</p>' +
+            (p.mix_match_group ? '<p class="text-xs text-pink-600">' + p.mix_match_group + '</p>' : '') +
+            (productCount > 0 ? '<p class="text-xs text-pink-500 mt-1">' + productCount + ' produtos elegíveis</p>' : '') +
+          '</div>';
+        }
+        
+        const bgGradient = isActive && isInPeriod 
+          ? 'from-' + config.color + '-50 to-' + config.color + '-100 border-' + config.color + '-300'
+          : 'from-gray-50 to-gray-100 border-gray-300';
+        
+        return '<div class="bg-gradient-to-br ' + bgGradient + ' rounded-xl p-4 border-2">' +
           '<div class="flex justify-between items-start mb-3">' +
             '<div>' +
-              '<span class="text-2xl">🏷️</span>' +
+              '<div class="flex items-center gap-2 mb-1">' +
+                '<span class="text-xl">' + config.icon + '</span>' +
+                '<span class="text-xs px-2 py-0.5 bg-' + config.color + '-200 text-' + config.color + '-800 rounded-full">' + config.label + '</span>' +
+              '</div>' +
               '<h4 class="font-bold text-gray-800">' + (p.name || 'Promoção') + '</h4>' +
             '</div>' +
             '<div class="flex gap-1">' +
@@ -2774,20 +2966,104 @@ function getOwnerDashboardHTML() {
             '</div>' +
           '</div>' +
           '<div class="space-y-2">' +
-            (p.regular_price ? '<p class="text-sm text-gray-500 line-through">De: $' + p.regular_price.toFixed(2) + '</p>' : '') +
-            '<p class="text-2xl font-bold text-green-600">$' + (p.promotional_price || p.price || 0).toFixed(2) + '</p>' +
-            (p.start_date || p.end_date ? '<p class="text-xs text-gray-500">' + 
-              (p.start_date ? new Date(p.start_date).toLocaleDateString('pt-BR') : '') + 
-              ' - ' + 
-              (p.end_date ? new Date(p.end_date).toLocaleDateString('pt-BR') : '') + 
+            promoContent +
+            (p.start_date || p.end_date ? '<p class="text-xs text-gray-500 text-center mt-2">' + 
+              (p.start_date ? new Date(p.start_date).toLocaleDateString('pt-BR') : '...') + 
+              ' até ' + 
+              (p.end_date ? new Date(p.end_date).toLocaleDateString('pt-BR') : '...') + 
             '</p>' : '') +
-            '<span class="inline-block px-2 py-1 rounded-full text-xs ' + (isActive && isInPeriod ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700') + '">' +
-              (isActive && isInPeriod ? '✓ Ativa' : 'Inativa') +
-            '</span>' +
+            '<div class="text-center mt-2">' +
+              '<span class="inline-block px-3 py-1 rounded-full text-xs font-medium ' + (isActive && isInPeriod ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700') + '">' +
+                (isActive && isInPeriod ? '✓ Ativa' : 'Inativa') +
+              '</span>' +
+            '</div>' +
           '</div>' +
         '</div>';
       }).join('');
     }
+
+    let currentPromoType = 'fixed_price';
+
+    function selectPromoType(type) {
+      currentPromoType = type;
+      
+      // Esconder todos os campos
+      document.querySelectorAll('.promo-fields').forEach(el => el.classList.add('hidden'));
+      
+      // Mostrar os campos do tipo selecionado
+      if (type === 'fixed_price') {
+        document.getElementById('fixedPriceFields').classList.remove('hidden');
+      } else if (type === 'multi_buy') {
+        document.getElementById('multiBuyFields').classList.remove('hidden');
+        updateMultiBuyPreview();
+      } else if (type === 'buy_get') {
+        document.getElementById('buyGetFields').classList.remove('hidden');
+        updateBuyGetPreview();
+      } else if (type === 'percent_off') {
+        document.getElementById('percentOffFields').classList.remove('hidden');
+      } else if (type === 'mix_match') {
+        document.getElementById('mixMatchFields').classList.remove('hidden');
+        updateMixMatchPreview();
+      }
+      
+      // Atualizar visual dos radio buttons
+      document.querySelectorAll('.promo-type-option').forEach(el => {
+        el.classList.remove('border-blue-500', 'bg-blue-50', 'border-green-500', 'bg-green-50', 'border-purple-500', 'bg-purple-50', 'border-orange-500', 'bg-orange-50', 'border-pink-500', 'bg-pink-50');
+      });
+      
+      const selected = document.querySelector('input[name="promoType"][value="' + type + '"]');
+      if (selected) {
+        selected.checked = true;
+        const colors = {
+          'fixed_price': ['border-blue-500', 'bg-blue-50'],
+          'multi_buy': ['border-green-500', 'bg-green-50'],
+          'buy_get': ['border-purple-500', 'bg-purple-50'],
+          'percent_off': ['border-orange-500', 'bg-orange-50'],
+          'mix_match': ['border-pink-500', 'bg-pink-50']
+        };
+        selected.closest('.promo-type-option').classList.add(...colors[type]);
+      }
+    }
+
+    function updateMultiBuyPreview() {
+      const qty = parseInt(document.getElementById('multiBuyQty').value) || 2;
+      const price = parseFloat(document.getElementById('multiBuyPrice').value) || 0;
+      const unitPrice = price > 0 ? (price / qty).toFixed(2) : '0.00';
+      document.getElementById('multiBuyPreview').textContent = 'Preço unitário na promoção: $' + unitPrice;
+    }
+
+    function updateBuyGetPreview() {
+      const buy = parseInt(document.getElementById('buyGetBuy').value) || 2;
+      const get = parseInt(document.getElementById('buyGetGet').value) || 3;
+      const free = get - buy;
+      document.getElementById('buyGetPreview').textContent = 'Cliente paga ' + buy + ', leva ' + get + ' (' + free + ' grátis!)';
+    }
+
+    function updateMixMatchPreview() {
+      const qty = parseInt(document.getElementById('mixMatchQty').value) || 3;
+      const price = parseFloat(document.getElementById('mixMatchPrice').value) || 0;
+      const group = document.getElementById('mixMatchGroup').value || 'do grupo';
+      document.getElementById('mixMatchPreview').textContent = 'Escolha ' + qty + ' itens ' + group + ' e pague apenas $' + price.toFixed(2) + '!';
+    }
+
+    // Event listeners para preview
+    document.addEventListener('DOMContentLoaded', function() {
+      const multiBuyQty = document.getElementById('multiBuyQty');
+      const multiBuyPrice = document.getElementById('multiBuyPrice');
+      const buyGetBuy = document.getElementById('buyGetBuy');
+      const buyGetGet = document.getElementById('buyGetGet');
+      const mixMatchQty = document.getElementById('mixMatchQty');
+      const mixMatchPrice = document.getElementById('mixMatchPrice');
+      const mixMatchGroup = document.getElementById('mixMatchGroup');
+      
+      if (multiBuyQty) multiBuyQty.addEventListener('input', updateMultiBuyPreview);
+      if (multiBuyPrice) multiBuyPrice.addEventListener('input', updateMultiBuyPreview);
+      if (buyGetBuy) buyGetBuy.addEventListener('input', updateBuyGetPreview);
+      if (buyGetGet) buyGetGet.addEventListener('input', updateBuyGetPreview);
+      if (mixMatchQty) mixMatchQty.addEventListener('input', updateMixMatchPreview);
+      if (mixMatchPrice) mixMatchPrice.addEventListener('input', updateMixMatchPreview);
+      if (mixMatchGroup) mixMatchGroup.addEventListener('input', updateMixMatchPreview);
+    });
 
     function openPromotionModal(promotion = null) {
       document.getElementById('promotionModalTitle').textContent = promotion ? 'Editar Promoção' : 'Nova Promoção';
@@ -2799,6 +3075,29 @@ function getOwnerDashboardHTML() {
       document.getElementById('promotionStartDate').value = promotion && promotion.start_date ? promotion.start_date.split('T')[0] : '';
       document.getElementById('promotionEndDate').value = promotion && promotion.end_date ? promotion.end_date.split('T')[0] : '';
       document.getElementById('promotionActive').checked = promotion ? promotion.is_active !== false : true;
+      
+      // Carregar tipo de promoção
+      const promoType = promotion?.promo_type || 'fixed_price';
+      selectPromoType(promoType);
+      
+      // Preencher campos específicos
+      if (promoType === 'multi_buy' && promotion) {
+        document.getElementById('multiBuyQty').value = promotion.multi_buy_qty || 2;
+        document.getElementById('multiBuyPrice').value = promotion.multi_buy_price || '';
+        updateMultiBuyPreview();
+      } else if (promoType === 'buy_get' && promotion) {
+        document.getElementById('buyGetBuy').value = promotion.buy_qty || 2;
+        document.getElementById('buyGetGet').value = promotion.get_qty || 3;
+        updateBuyGetPreview();
+      } else if (promoType === 'percent_off' && promotion) {
+        document.getElementById('percentOffValue').value = promotion.percent_off || 20;
+      } else if (promoType === 'mix_match' && promotion) {
+        document.getElementById('mixMatchQty').value = promotion.mix_match_qty || 3;
+        document.getElementById('mixMatchPrice').value = promotion.mix_match_price || '';
+        document.getElementById('mixMatchGroup').value = promotion.mix_match_group || '';
+        document.getElementById('mixMatchProducts').value = (promotion.mix_match_products || []).join(', ');
+        updateMixMatchPreview();
+      }
       
       document.getElementById('promotionModal').classList.remove('hidden');
       document.getElementById('promotionModal').classList.add('flex');
@@ -2816,17 +3115,41 @@ function getOwnerDashboardHTML() {
 
     async function savePromotion(e) {
       e.preventDefault();
+      
+      const promoType = currentPromoType;
+      
       const promotion = {
         id: document.getElementById('promotionId').value ? parseInt(document.getElementById('promotionId').value) : null,
         name: document.getElementById('promotionName').value,
         product_id: document.getElementById('promotionProduct').value || null,
-        regular_price: parseFloat(document.getElementById('promotionRegularPrice').value) || null,
-        promotional_price: parseFloat(document.getElementById('promotionPrice').value) || 0,
-        price: parseFloat(document.getElementById('promotionPrice').value) || 0,
+        promo_type: promoType,
         start_date: document.getElementById('promotionStartDate').value || null,
         end_date: document.getElementById('promotionEndDate').value || null,
         is_active: document.getElementById('promotionActive').checked
       };
+      
+      // Adicionar campos específicos do tipo
+      if (promoType === 'fixed_price') {
+        promotion.regular_price = parseFloat(document.getElementById('promotionRegularPrice').value) || null;
+        promotion.promotional_price = parseFloat(document.getElementById('promotionPrice').value) || 0;
+        promotion.price = promotion.promotional_price;
+      } else if (promoType === 'multi_buy') {
+        promotion.multi_buy_qty = parseInt(document.getElementById('multiBuyQty').value) || 2;
+        promotion.multi_buy_price = parseFloat(document.getElementById('multiBuyPrice').value) || 0;
+        promotion.promotional_price = promotion.multi_buy_price / promotion.multi_buy_qty;
+        promotion.price = promotion.promotional_price;
+      } else if (promoType === 'buy_get') {
+        promotion.buy_qty = parseInt(document.getElementById('buyGetBuy').value) || 2;
+        promotion.get_qty = parseInt(document.getElementById('buyGetGet').value) || 3;
+      } else if (promoType === 'percent_off') {
+        promotion.percent_off = parseInt(document.getElementById('percentOffValue').value) || 20;
+      } else if (promoType === 'mix_match') {
+        promotion.mix_match_qty = parseInt(document.getElementById('mixMatchQty').value) || 3;
+        promotion.mix_match_price = parseFloat(document.getElementById('mixMatchPrice').value) || 0;
+        promotion.mix_match_group = document.getElementById('mixMatchGroup').value || '';
+        const productsText = document.getElementById('mixMatchProducts').value || '';
+        promotion.mix_match_products = productsText.split(',').map(p => p.trim()).filter(p => p);
+      }
 
       try {
         const response = await fetch(API_BASE + '/api/admin/promotions?password=' + encodeURIComponent(password), {
