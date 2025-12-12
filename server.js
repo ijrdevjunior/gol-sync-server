@@ -1805,16 +1805,56 @@ function getOwnerDashboardHTML() {
                     </div>
                   </div>
                   <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">📁 Categoria ou Grupo de Produtos</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">📁 Nome do Grupo</label>
                     <input type="text" id="mixMatchGroup" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500" placeholder="Ex: Laticínios, Refrigerantes, Frutas...">
-                  </div>
-                  <div class="mt-3">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">🏷️ Produtos incluídos (barcodes separados por vírgula)</label>
-                    <textarea id="mixMatchProducts" rows="2" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 text-sm font-mono" placeholder="7891234567890, 7899876543210, ..."></textarea>
                   </div>
                   <div class="mt-3 text-center">
                     <span id="mixMatchPreview" class="text-sm text-pink-700 font-medium">Escolha 3 itens e pague apenas $10.00!</span>
                   </div>
+                </div>
+                
+                <!-- Busca de Produtos -->
+                <div class="mt-4 border-t pt-4">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">🔍 Adicionar Produtos à Promoção</label>
+                  <div class="relative">
+                    <input type="text" id="promoProductSearch" 
+                      class="w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500" 
+                      placeholder="Buscar por nome, código de barras ou SKU..."
+                      oninput="searchProductsForPromo(this.value)"
+                      onfocus="showPromoProductResults()">
+                    <div id="promoProductResults" class="absolute z-50 w-full bg-white border-2 border-pink-200 rounded-lg shadow-xl mt-1 max-h-60 overflow-y-auto hidden">
+                      <!-- Resultados da busca aparecem aqui -->
+                    </div>
+                  </div>
+                  
+                  <!-- Produtos Selecionados -->
+                  <div class="mt-3">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-sm font-medium text-gray-700">📦 Produtos Selecionados</span>
+                      <span id="selectedProductsCount" class="text-xs bg-pink-100 text-pink-700 px-2 py-1 rounded-full">0 produtos</span>
+                    </div>
+                    <div id="selectedProductsList" class="min-h-[60px] max-h-[150px] overflow-y-auto bg-gray-50 rounded-lg p-2 border-2 border-dashed border-gray-300">
+                      <p class="text-center text-gray-400 text-sm py-4">Nenhum produto adicionado</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Seletor de Produto para outros tipos (Multi-buy, etc) -->
+              <div id="productSelectorSection" class="mt-4 border-t pt-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">🔍 Buscar Produto para Promoção</label>
+                <div class="relative">
+                  <input type="text" id="singleProductSearch" 
+                    class="w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500" 
+                    placeholder="Buscar por nome, código de barras ou SKU..."
+                    oninput="searchSingleProduct(this.value)"
+                    onfocus="showSingleProductResults()">
+                  <div id="singleProductResults" class="absolute z-50 w-full bg-white border-2 border-blue-200 rounded-lg shadow-xl mt-1 max-h-60 overflow-y-auto hidden">
+                    <!-- Resultados aparecem aqui -->
+                  </div>
+                </div>
+                <div id="selectedSingleProduct" class="mt-2 hidden">
+                  <!-- Produto selecionado aparece aqui -->
                 </div>
               </div>
               
@@ -2983,12 +3023,23 @@ function getOwnerDashboardHTML() {
     }
 
     let currentPromoType = 'fixed_price';
+    let selectedPromoProducts = []; // Produtos selecionados para Mix & Match
+    let selectedSingleProduct = null; // Produto selecionado para promoções simples
+    let promoSearchTimeout = null;
 
     function selectPromoType(type) {
       currentPromoType = type;
       
       // Esconder todos os campos
       document.querySelectorAll('.promo-fields').forEach(el => el.classList.add('hidden'));
+      
+      // Mostrar/esconder seção de produto único vs mix & match
+      const singleProductSection = document.getElementById('productSelectorSection');
+      if (type === 'mix_match') {
+        singleProductSection?.classList.add('hidden');
+      } else {
+        singleProductSection?.classList.remove('hidden');
+      }
       
       // Mostrar os campos do tipo selecionado
       if (type === 'fixed_price') {
@@ -3046,6 +3097,200 @@ function getOwnerDashboardHTML() {
       document.getElementById('mixMatchPreview').textContent = 'Escolha ' + qty + ' itens ' + group + ' e pague apenas $' + price.toFixed(2) + '!';
     }
 
+    // =====================
+    // BUSCA DE PRODUTOS PARA PROMOÇÕES
+    // =====================
+    
+    function searchProductsForPromo(query) {
+      clearTimeout(promoSearchTimeout);
+      const resultsDiv = document.getElementById('promoProductResults');
+      
+      if (!query || query.length < 2) {
+        resultsDiv.classList.add('hidden');
+        return;
+      }
+      
+      promoSearchTimeout = setTimeout(() => {
+        const searchLower = query.toLowerCase();
+        const results = allProducts.filter(p => 
+          (p.name && p.name.toLowerCase().includes(searchLower)) ||
+          (p.barcode && p.barcode.includes(query)) ||
+          (p.sku && p.sku.includes(query))
+        ).slice(0, 10); // Limitar a 10 resultados
+        
+        if (results.length === 0) {
+          resultsDiv.innerHTML = '<div class="p-4 text-center text-gray-400">Nenhum produto encontrado</div>';
+        } else {
+          resultsDiv.innerHTML = results.map(p => {
+            const isSelected = selectedPromoProducts.some(sp => sp.id === p.id);
+            return '<div class="flex items-center justify-between p-3 hover:bg-pink-50 cursor-pointer border-b last:border-b-0 ' + (isSelected ? 'bg-green-50' : '') + '" onclick="togglePromoProduct(' + p.id + ')">' +
+              '<div class="flex-1">' +
+                '<p class="font-medium text-gray-800 truncate">' + (p.name || 'Sem nome') + '</p>' +
+                '<p class="text-xs text-gray-500 font-mono">' + (p.barcode || p.sku || p.id) + '</p>' +
+              '</div>' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="text-green-600 font-bold">$' + (p.price || 0).toFixed(2) + '</span>' +
+                (isSelected 
+                  ? '<span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm">✓</span>'
+                  : '<span class="w-6 h-6 bg-gray-200 text-gray-400 rounded-full flex items-center justify-center text-sm">+</span>') +
+              '</div>' +
+            '</div>';
+          }).join('');
+        }
+        
+        resultsDiv.classList.remove('hidden');
+      }, 300);
+    }
+
+    function showPromoProductResults() {
+      const query = document.getElementById('promoProductSearch').value;
+      if (query && query.length >= 2) {
+        document.getElementById('promoProductResults').classList.remove('hidden');
+      }
+    }
+
+    function togglePromoProduct(productId) {
+      const product = allProducts.find(p => p.id === productId);
+      if (!product) return;
+      
+      const existingIndex = selectedPromoProducts.findIndex(p => p.id === productId);
+      
+      if (existingIndex >= 0) {
+        // Remover
+        selectedPromoProducts.splice(existingIndex, 1);
+      } else {
+        // Adicionar
+        selectedPromoProducts.push({
+          id: product.id,
+          name: product.name,
+          barcode: product.barcode,
+          sku: product.sku,
+          price: product.price
+        });
+      }
+      
+      renderSelectedProducts();
+      // Re-buscar para atualizar os checkmarks
+      searchProductsForPromo(document.getElementById('promoProductSearch').value);
+    }
+
+    function removePromoProduct(productId) {
+      selectedPromoProducts = selectedPromoProducts.filter(p => p.id !== productId);
+      renderSelectedProducts();
+    }
+
+    function renderSelectedProducts() {
+      const listDiv = document.getElementById('selectedProductsList');
+      const countSpan = document.getElementById('selectedProductsCount');
+      
+      countSpan.textContent = selectedPromoProducts.length + ' produto' + (selectedPromoProducts.length !== 1 ? 's' : '');
+      
+      if (selectedPromoProducts.length === 0) {
+        listDiv.innerHTML = '<p class="text-center text-gray-400 text-sm py-4">Nenhum produto adicionado</p>';
+        return;
+      }
+      
+      listDiv.innerHTML = '<div class="flex flex-wrap gap-2">' + 
+        selectedPromoProducts.map(p => 
+          '<div class="inline-flex items-center gap-2 bg-white border border-pink-300 rounded-full pl-3 pr-1 py-1 shadow-sm">' +
+            '<div class="max-w-[150px]">' +
+              '<p class="text-sm font-medium text-gray-800 truncate">' + (p.name || 'Produto') + '</p>' +
+              '<p class="text-xs text-gray-500 font-mono">' + (p.barcode || p.sku || p.id) + '</p>' +
+            '</div>' +
+            '<button type="button" onclick="removePromoProduct(' + p.id + ')" class="w-6 h-6 bg-red-100 hover:bg-red-200 text-red-600 rounded-full flex items-center justify-center text-xs font-bold">×</button>' +
+          '</div>'
+        ).join('') +
+      '</div>';
+    }
+
+    // Busca para produto único (Multi-buy, Preço fixo, etc)
+    function searchSingleProduct(query) {
+      clearTimeout(promoSearchTimeout);
+      const resultsDiv = document.getElementById('singleProductResults');
+      
+      if (!query || query.length < 2) {
+        resultsDiv.classList.add('hidden');
+        return;
+      }
+      
+      promoSearchTimeout = setTimeout(() => {
+        const searchLower = query.toLowerCase();
+        const results = allProducts.filter(p => 
+          (p.name && p.name.toLowerCase().includes(searchLower)) ||
+          (p.barcode && p.barcode.includes(query)) ||
+          (p.sku && p.sku.includes(query))
+        ).slice(0, 8);
+        
+        if (results.length === 0) {
+          resultsDiv.innerHTML = '<div class="p-4 text-center text-gray-400">Nenhum produto encontrado</div>';
+        } else {
+          resultsDiv.innerHTML = results.map(p => 
+            '<div class="flex items-center justify-between p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0" onclick="selectSingleProduct(' + p.id + ')">' +
+              '<div class="flex-1">' +
+                '<p class="font-medium text-gray-800 truncate">' + (p.name || 'Sem nome') + '</p>' +
+                '<p class="text-xs text-gray-500 font-mono">' + (p.barcode || p.sku || p.id) + '</p>' +
+              '</div>' +
+              '<span class="text-green-600 font-bold">$' + (p.price || 0).toFixed(2) + '</span>' +
+            '</div>'
+          ).join('');
+        }
+        
+        resultsDiv.classList.remove('hidden');
+      }, 300);
+    }
+
+    function showSingleProductResults() {
+      const query = document.getElementById('singleProductSearch').value;
+      if (query && query.length >= 2) {
+        document.getElementById('singleProductResults').classList.remove('hidden');
+      }
+    }
+
+    function selectSingleProduct(productId) {
+      const product = allProducts.find(p => p.id === productId);
+      if (!product) return;
+      
+      selectedSingleProduct = product;
+      document.getElementById('promotionProduct').value = product.barcode || product.id;
+      document.getElementById('promotionRegularPrice').value = product.price || '';
+      
+      // Mostrar produto selecionado
+      const selectedDiv = document.getElementById('selectedSingleProduct');
+      selectedDiv.innerHTML = 
+        '<div class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">' +
+          '<div class="flex-1">' +
+            '<p class="font-medium text-gray-800">' + product.name + '</p>' +
+            '<p class="text-xs text-gray-500 font-mono">' + (product.barcode || product.sku || product.id) + '</p>' +
+          '</div>' +
+          '<div class="flex items-center gap-3">' +
+            '<span class="text-green-600 font-bold text-lg">$' + (product.price || 0).toFixed(2) + '</span>' +
+            '<button type="button" onclick="clearSingleProduct()" class="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-full">✕</button>' +
+          '</div>' +
+        '</div>';
+      selectedDiv.classList.remove('hidden');
+      
+      // Esconder resultados e limpar busca
+      document.getElementById('singleProductResults').classList.add('hidden');
+      document.getElementById('singleProductSearch').value = '';
+    }
+
+    function clearSingleProduct() {
+      selectedSingleProduct = null;
+      document.getElementById('promotionProduct').value = '';
+      document.getElementById('selectedSingleProduct').classList.add('hidden');
+      document.getElementById('selectedSingleProduct').innerHTML = '';
+    }
+
+    // Fechar dropdowns ao clicar fora
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('#promoProductSearch') && !e.target.closest('#promoProductResults')) {
+        document.getElementById('promoProductResults')?.classList.add('hidden');
+      }
+      if (!e.target.closest('#singleProductSearch') && !e.target.closest('#singleProductResults')) {
+        document.getElementById('singleProductResults')?.classList.add('hidden');
+      }
+    });
+
     // Event listeners para preview
     document.addEventListener('DOMContentLoaded', function() {
       const multiBuyQty = document.getElementById('multiBuyQty');
@@ -3076,6 +3321,17 @@ function getOwnerDashboardHTML() {
       document.getElementById('promotionEndDate').value = promotion && promotion.end_date ? promotion.end_date.split('T')[0] : '';
       document.getElementById('promotionActive').checked = promotion ? promotion.is_active !== false : true;
       
+      // Limpar seleções anteriores
+      if (!promotion) {
+        selectedPromoProducts = [];
+        selectedSingleProduct = null;
+        renderSelectedProducts();
+        document.getElementById('selectedSingleProduct').innerHTML = '';
+        document.getElementById('selectedSingleProduct').classList.add('hidden');
+        document.getElementById('promoProductSearch').value = '';
+        document.getElementById('singleProductSearch').value = '';
+      }
+      
       // Carregar tipo de promoção
       const promoType = promotion?.promo_type || 'fixed_price';
       selectPromoType(promoType);
@@ -3095,8 +3351,33 @@ function getOwnerDashboardHTML() {
         document.getElementById('mixMatchQty').value = promotion.mix_match_qty || 3;
         document.getElementById('mixMatchPrice').value = promotion.mix_match_price || '';
         document.getElementById('mixMatchGroup').value = promotion.mix_match_group || '';
-        document.getElementById('mixMatchProducts').value = (promotion.mix_match_products || []).join(', ');
+        // Carregar produtos selecionados do Mix & Match
+        selectedPromoProducts = [];
+        if (promotion.mix_match_products && promotion.mix_match_products.length > 0) {
+          promotion.mix_match_products.forEach(barcode => {
+            const product = allProducts.find(p => p.barcode === barcode || p.id == barcode);
+            if (product) {
+              selectedPromoProducts.push({
+                id: product.id,
+                name: product.name,
+                barcode: product.barcode,
+                sku: product.sku,
+                price: product.price
+              });
+            }
+          });
+        }
+        renderSelectedProducts();
         updateMixMatchPreview();
+      }
+      
+      // Carregar produto único para outros tipos de promoção
+      clearSingleProduct();
+      if (['fixed_price', 'multi_buy', 'buy_get', 'percent_off'].includes(promoType) && promotion && promotion.product_barcode) {
+        const product = allProducts.find(p => p.barcode === promotion.product_barcode || p.id == promotion.product_barcode);
+        if (product) {
+          selectSingleProduct(product.id);
+        }
       }
       
       document.getElementById('promotionModal').classList.remove('hidden');
@@ -3147,8 +3428,8 @@ function getOwnerDashboardHTML() {
         promotion.mix_match_qty = parseInt(document.getElementById('mixMatchQty').value) || 3;
         promotion.mix_match_price = parseFloat(document.getElementById('mixMatchPrice').value) || 0;
         promotion.mix_match_group = document.getElementById('mixMatchGroup').value || '';
-        const productsText = document.getElementById('mixMatchProducts').value || '';
-        promotion.mix_match_products = productsText.split(',').map(p => p.trim()).filter(p => p);
+        // Usar os produtos selecionados na interface
+        promotion.mix_match_products = selectedPromoProducts.map(p => p.barcode || p.id);
       }
 
       try {
