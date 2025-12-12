@@ -449,7 +449,7 @@ app.get('/api/sync/health', (req, res) => {
 });
 
 // Push sales from a store
-app.post('/api/sync/push', (req, res) => {
+app.post('/api/sync/push', async (req, res) => {
   try {
     const { storeId, sales, timestamp } = req.body;
 
@@ -466,12 +466,42 @@ app.post('/api/sync/push', (req, res) => {
 
     salesStore.set(storeId, [...existingSales, ...newSales]);
     
-    console.log(`✅ Received ${newSales.length} new sales from store ${storeId} (Total: ${salesStore.get(storeId).length})`);
+    // ✅ SALVAR NO SUPABASE - cada venda nova
+    let savedToSupabase = 0;
+    for (const sale of newSales) {
+      try {
+        // Preparar dados para salvar no Supabase
+        const saleData = {
+          sale_number: sale.sale_number,
+          store_id: storeId,
+          store_name: sale.store_name || null,
+          store_address: sale.store_address || null,
+          terminal_id: sale.terminal_id || null,
+          user_id: sale.user_id || null,
+          subtotal: sale.subtotal || 0,
+          discount: sale.discount || 0,
+          tax: sale.tax || 0,
+          total: sale.total || 0,
+          status: sale.status || 'completed',
+          items: sale.items || [],
+          created_at: sale.created_at || new Date().toISOString(),
+          timestamp: new Date().toISOString()
+        };
+        
+        await db.saveSale(saleData);
+        savedToSupabase++;
+      } catch (e) {
+        console.error('Error saving sale to Supabase:', e.message);
+      }
+    }
+    
+    console.log(`✅ Received ${newSales.length} new sales from store ${storeId} (${savedToSupabase} saved to Supabase)`);
 
     res.json({
       success: true,
-      message: `Received ${newSales.length} sales`,
+      message: `Received ${newSales.length} sales (${savedToSupabase} saved to cloud)`,
       totalSales: salesStore.get(storeId).length,
+      savedToCloud: savedToSupabase
     });
   } catch (error) {
     console.error('Error pushing sales:', error);
@@ -532,10 +562,47 @@ app.get('/api/sync/stores', (req, res) => {
 });
 
 // Register a store
-app.post('/api/sync/stores', (req, res) => {
+app.post('/api/sync/stores', async (req, res) => {
   try {
     const { id, name, address, phone } = req.body;
-    stores.set(id, { id, name, address, phone, registeredAt: new Date().toISOString() });
+    const storeData = { 
+      id, 
+      name, 
+      address, 
+      phone, 
+      is_active: true,
+      registeredAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    stores.set(id, storeData);
+    
+    // ✅ Salvar loja no Supabase
+    if (useSupabase && supabase) {
+      try {
+        const { error } = await supabase
+          .from('stores')
+          .upsert({
+            id: id,
+            name: name,
+            address: address || null,
+            phone: phone || null,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+          
+        if (error) {
+          console.error('❌ Error saving store to Supabase:', error.message);
+        } else {
+          console.log(`✅ Store saved to Supabase: ${name}`);
+        }
+      } catch (e) {
+        console.error('❌ Supabase store error:', e.message);
+      }
+    }
+    
     console.log(`📝 Store registered: ${name} (ID: ${id})`);
     res.json({ success: true, store: stores.get(id) });
   } catch (error) {
