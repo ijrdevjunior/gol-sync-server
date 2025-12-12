@@ -1106,6 +1106,74 @@ app.get('/api/owner/compare', checkOwnerAuth, (req, res) => {
   }
 });
 
+// Todas as vendas (para o painel do dono)
+app.get('/api/owner/all-sales', checkOwnerAuth, async (req, res) => {
+  try {
+    const { startDate, endDate, store_id } = req.query;
+    
+    let sales = [];
+    
+    // Buscar do Supabase primeiro
+    if (useSupabase && supabase) {
+      let query = supabase.from('sales').select('*').order('created_at', { ascending: false });
+      
+      if (startDate) {
+        query = query.gte('created_at', startDate + 'T00:00:00');
+      }
+      if (endDate) {
+        query = query.lte('created_at', endDate + 'T23:59:59');
+      }
+      if (store_id && store_id !== 'all') {
+        query = query.eq('store_id', store_id);
+      }
+      
+      const { data, error } = await query.limit(500);
+      if (!error && data) {
+        sales = data;
+      }
+    } else {
+      // Fallback: memória
+      salesStore.forEach((storeSales, storeId) => {
+        if (!store_id || store_id === 'all' || storeId == store_id) {
+          sales.push(...storeSales);
+        }
+      });
+      
+      // Filtrar por data
+      if (startDate || endDate) {
+        sales = sales.filter(sale => {
+          const saleDate = new Date(sale.created_at || sale.timestamp);
+          if (startDate && saleDate < new Date(startDate)) return false;
+          if (endDate && saleDate > new Date(endDate + 'T23:59:59')) return false;
+          return true;
+        });
+      }
+      
+      sales.sort((a, b) => new Date(b.created_at || b.timestamp) - new Date(a.created_at || a.timestamp));
+    }
+    
+    // Buscar lojas para adicionar nomes
+    const stores = await db.getStores();
+    const storeMap = {};
+    stores.forEach(s => storeMap[s.id] = s.name);
+    
+    // Adicionar nome da loja a cada venda
+    sales = sales.map(sale => ({
+      ...sale,
+      store_name: storeMap[sale.store_id] || 'Loja ' + (sale.store_id || 1)
+    }));
+    
+    res.json({
+      sales,
+      count: sales.length,
+      total: sales.reduce((sum, s) => sum + (s.total || 0), 0)
+    });
+  } catch (error) {
+    console.error('Error fetching all sales:', error);
+    res.status(500).json({ error: 'Erro ao buscar vendas' });
+  }
+});
+
 // =====================================
 // APIs DE ADMINISTRAÇÃO - Produtos, Categorias, Promoções
 // =====================================
@@ -1641,7 +1709,7 @@ function getOwnerDashboardHTML() {
     </div>
   </div>
 
-  <!-- Dashboard Screen -->
+    <!-- Dashboard Screen -->
   <div id="dashboardScreen" class="hidden">
     <!-- Header -->
     <header class="gradient-bg text-white shadow-lg">
@@ -1650,11 +1718,20 @@ function getOwnerDashboardHTML() {
           <div class="flex items-center gap-4">
             <span class="text-3xl">🏪</span>
             <div>
-              <h1 class="text-xl font-bold">Gol Supermarket</h1>
-              <p class="text-blue-200 text-xs">Painel Administrativo</p>
+              <h1 class="text-xl font-bold">GOL SUPERMARKET</h1>
+              <p class="text-blue-200 text-xs">Painel do Proprietário</p>
             </div>
           </div>
+          
+          <!-- Seletor de Loja -->
           <div class="flex items-center gap-3">
+            <div class="bg-white/10 rounded-xl px-3 py-2 flex items-center gap-2">
+              <span class="text-sm">🏪</span>
+              <select id="storeSelector" onchange="changeSelectedStore()" 
+                class="bg-transparent text-white border-0 focus:ring-0 text-sm font-medium cursor-pointer min-w-[180px]">
+                <option value="all" class="text-gray-800">📊 Todas as Lojas</option>
+              </select>
+            </div>
             <div class="flex items-center gap-2 bg-green-500/30 px-2 py-1 rounded-full">
               <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
               <span class="text-xs font-medium text-green-200">TEMPO REAL</span>
@@ -1667,6 +1744,8 @@ function getOwnerDashboardHTML() {
         <!-- Navigation Tabs -->
         <div class="flex gap-2 mt-3 flex-wrap">
           <button onclick="switchTab('dashboard')" class="tab-btn active px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📊 Dashboard</button>
+          <button onclick="switchTab('sales')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">💵 Vendas</button>
+          <button onclick="switchTab('employees')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">👔 Funcionários</button>
           <button onclick="switchTab('products')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📦 Produtos</button>
           <button onclick="switchTab('categories')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📁 Categorias</button>
           <button onclick="switchTab('promotions')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">🏷️ Promoções</button>
@@ -1760,6 +1839,154 @@ function getOwnerDashboardHTML() {
       </div>
 
       </div><!-- End Dashboard Tab -->
+
+      <!-- SALES TAB -->
+      <div id="tab-sales" class="tab-content">
+        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h2 class="text-xl font-bold text-gray-800">💵 Vendas Detalhadas</h2>
+              <p id="salesStoreInfo" class="text-sm text-gray-500">Todas as lojas</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <button onclick="exportSales('csv')" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                📥 Exportar CSV
+              </button>
+              <button onclick="exportSales('pdf')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">
+                📄 Exportar PDF
+              </button>
+            </div>
+          </div>
+          
+          <!-- Filtros -->
+          <div class="bg-gray-50 rounded-xl p-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">📅 Data Início</label>
+                <input type="date" id="salesStartDate" class="w-full px-3 py-2 border rounded-lg" onchange="loadSalesData()">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">📅 Data Fim</label>
+                <input type="date" id="salesEndDate" class="w-full px-3 py-2 border rounded-lg" onchange="loadSalesData()">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">👤 Operador</label>
+                <select id="salesOperator" class="w-full px-3 py-2 border rounded-lg" onchange="loadSalesData()">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">💳 Pagamento</label>
+                <select id="salesPayment" class="w-full px-3 py-2 border rounded-lg" onchange="loadSalesData()">
+                  <option value="">Todos</option>
+                  <option value="cash">Dinheiro</option>
+                  <option value="credit">Cartão Crédito</option>
+                  <option value="debit">Cartão Débito</option>
+                  <option value="pix">PIX</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Resumo -->
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-green-50 rounded-xl p-4 text-center border border-green-200">
+              <p id="salesTotalRevenue" class="text-2xl font-bold text-green-600">$0.00</p>
+              <p class="text-xs text-gray-600">Receita Total</p>
+            </div>
+            <div class="bg-blue-50 rounded-xl p-4 text-center border border-blue-200">
+              <p id="salesTotalCount" class="text-2xl font-bold text-blue-600">0</p>
+              <p class="text-xs text-gray-600">Total de Vendas</p>
+            </div>
+            <div class="bg-purple-50 rounded-xl p-4 text-center border border-purple-200">
+              <p id="salesAvgTicket" class="text-2xl font-bold text-purple-600">$0.00</p>
+              <p class="text-xs text-gray-600">Ticket Médio</p>
+            </div>
+            <div class="bg-orange-50 rounded-xl p-4 text-center border border-orange-200">
+              <p id="salesItemsCount" class="text-2xl font-bold text-orange-600">0</p>
+              <p class="text-xs text-gray-600">Itens Vendidos</p>
+            </div>
+          </div>
+          
+          <!-- Tabela de Vendas -->
+          <div class="overflow-x-auto border rounded-lg">
+            <table class="w-full">
+              <thead class="bg-gray-100">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Nº Venda</th>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Loja</th>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Data/Hora</th>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Operador</th>
+                  <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Itens</th>
+                  <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
+                  <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Status</th>
+                  <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="salesTableBody" class="divide-y divide-gray-100">
+                <tr><td colspan="8" class="text-center py-12 text-gray-400">
+                  <div class="animate-pulse">⏳ Carregando vendas...</div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Paginação -->
+          <div class="flex items-center justify-between mt-4 px-2">
+            <div id="salesPaginationInfo" class="text-sm text-gray-600">Mostrando 0 de 0</div>
+            <div class="flex gap-2">
+              <button onclick="changeSalesPage(-1)" class="px-3 py-1 rounded border hover:bg-gray-100 text-sm">◀️ Anterior</button>
+              <span id="salesCurrentPage" class="px-3 py-1 text-sm">1</span>
+              <button onclick="changeSalesPage(1)" class="px-3 py-1 rounded border hover:bg-gray-100 text-sm">Próxima ▶️</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EMPLOYEES TAB -->
+      <div id="tab-employees" class="tab-content">
+        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h2 class="text-xl font-bold text-gray-800">👔 Funcionários por Loja</h2>
+              <p id="employeesStoreInfo" class="text-sm text-gray-500">Visualize o desempenho dos funcionários</p>
+            </div>
+          </div>
+          
+          <!-- Resumo de Funcionários -->
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-blue-50 rounded-xl p-4 text-center border border-blue-200">
+              <p id="totalEmployees" class="text-2xl font-bold text-blue-600">0</p>
+              <p class="text-xs text-gray-600">Total Funcionários</p>
+            </div>
+            <div class="bg-green-50 rounded-xl p-4 text-center border border-green-200">
+              <p id="activeEmployees" class="text-2xl font-bold text-green-600">0</p>
+              <p class="text-xs text-gray-600">Ativos Hoje</p>
+            </div>
+            <div class="bg-purple-50 rounded-xl p-4 text-center border border-purple-200">
+              <p id="totalCashiers" class="text-2xl font-bold text-purple-600">0</p>
+              <p class="text-xs text-gray-600">Caixas</p>
+            </div>
+            <div class="bg-orange-50 rounded-xl p-4 text-center border border-orange-200">
+              <p id="totalManagers" class="text-2xl font-bold text-orange-600">0</p>
+              <p class="text-xs text-gray-600">Gerentes</p>
+            </div>
+          </div>
+          
+          <!-- Grid de Funcionários -->
+          <div id="employeesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="text-center py-8 text-gray-400 col-span-full">Carregando funcionários...</div>
+          </div>
+        </div>
+        
+        <!-- Ranking de Vendas por Funcionário -->
+        <div class="bg-white rounded-xl p-6 card-shadow">
+          <h3 class="text-lg font-bold text-gray-800 mb-4">🏆 Ranking de Vendas (Período Selecionado)</h3>
+          <div id="employeesRanking" class="space-y-3">
+            <div class="text-center py-8 text-gray-400">Carregando ranking...</div>
+          </div>
+        </div>
+      </div>
 
       <!-- PRODUCTS TAB -->
       <div id="tab-products" class="tab-content">
@@ -2559,6 +2786,12 @@ function getOwnerDashboardHTML() {
     let revenueChart = null;
     let storeComparisonChart = null;
     const API_BASE = window.location.origin;
+    
+    // Store selection
+    let selectedStoreId = 'all';
+    let allStoresData = [];
+    let salesPage = 1;
+    let salesPerPage = 25;
 
     // Função para mostrar notificações toast
     function showToast(message, type = 'info') {
@@ -2672,16 +2905,38 @@ function getOwnerDashboardHTML() {
           '&startDate=' + startDate + '&endDate=' + endDate
         );
         const report = await reportResponse.json();
+        
+        // Save all stores data
+        allStoresData = report.stores || [];
+        
+        // Update store selector
+        updateStoreSelector(allStoresData);
+        
+        // Filter data by selected store
+        let filteredStores = allStoresData;
+        if (selectedStoreId !== 'all') {
+          filteredStores = allStoresData.filter(s => s.id == selectedStoreId);
+        }
+        
+        // Calculate totals
+        const totalRevenue = filteredStores.reduce((sum, s) => sum + (s.revenue || 0), 0);
+        const totalTransactions = filteredStores.reduce((sum, s) => sum + (s.transactions || 0), 0);
+        const avgTicket = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
 
         // Update KPIs
-        document.getElementById('totalRevenue').textContent = '$' + report.totals.totalRevenue.toFixed(2);
-        document.getElementById('totalTransactions').textContent = report.totals.totalTransactions;
-        document.getElementById('avgTicket').textContent = '$' + report.totals.avgTicket.toFixed(2);
-        document.getElementById('activeStores').textContent = report.stores.filter(s => s.transactions > 0).length;
+        document.getElementById('totalRevenue').textContent = '$' + totalRevenue.toFixed(2);
+        document.getElementById('totalTransactions').textContent = totalTransactions;
+        document.getElementById('avgTicket').textContent = '$' + avgTicket.toFixed(2);
+        document.getElementById('activeStores').textContent = filteredStores.filter(s => s.transactions > 0).length;
         document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('pt-BR');
 
-        // Update stores grid
-        updateStoresGrid(report.stores);
+        // Update stores grid (only if "all" is selected or show single store)
+        if (selectedStoreId === 'all') {
+          updateStoresGrid(filteredStores);
+        } else {
+          // Show detailed view for selected store
+          updateSingleStoreView(filteredStores[0]);
+        }
 
         // Load comparison for charts
         const days = currentPeriod === 'today' ? 1 : currentPeriod === 'week' ? 7 : 30;
@@ -2690,12 +2945,93 @@ function getOwnerDashboardHTML() {
         );
         const comparison = await compareResponse.json();
 
+        // Filter comparison by selected store
+        if (selectedStoreId !== 'all') {
+          comparison.comparison = comparison.comparison.filter(s => s.storeId == selectedStoreId);
+        }
+
         // Update charts
         updateCharts(comparison);
 
       } catch (error) {
         console.error('Error loading data:', error);
       }
+    }
+    
+    function updateStoreSelector(stores) {
+      const selector = document.getElementById('storeSelector');
+      const currentValue = selector.value;
+      
+      selector.innerHTML = '<option value="all" class="text-gray-800">📊 Todas as Lojas (' + stores.length + ')</option>';
+      
+      stores.forEach(store => {
+        const option = document.createElement('option');
+        option.value = store.id;
+        option.textContent = '🏪 ' + store.name;
+        option.className = 'text-gray-800';
+        selector.appendChild(option);
+      });
+      
+      // Restore selected value
+      selector.value = currentValue || 'all';
+    }
+    
+    function changeSelectedStore() {
+      selectedStoreId = document.getElementById('storeSelector').value;
+      loadData();
+      
+      // Update other tabs info
+      const storeName = selectedStoreId === 'all' ? 'Todas as lojas' : 
+        allStoresData.find(s => s.id == selectedStoreId)?.name || 'Loja';
+      
+      const salesInfo = document.getElementById('salesStoreInfo');
+      const employeesInfo = document.getElementById('employeesStoreInfo');
+      if (salesInfo) salesInfo.textContent = storeName;
+      if (employeesInfo) employeesInfo.textContent = storeName;
+    }
+    
+    function updateSingleStoreView(store) {
+      if (!store) return;
+      
+      const grid = document.getElementById('storesGrid');
+      grid.innerHTML = \`
+        <div class="col-span-full bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <span class="text-4xl">🏪</span>
+              <div>
+                <h3 class="text-2xl font-bold">\${store.name}</h3>
+                <p class="text-blue-200">\${store.address || 'Endereço não informado'}</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <p class="text-blue-200 text-sm">Última venda</p>
+              <p class="font-bold">\${store.lastSale ? new Date(store.lastSale.created_at || store.lastSale.timestamp).toLocaleString('pt-BR') : 'N/A'}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="bg-white rounded-xl p-6 shadow-lg">
+          <div class="text-center">
+            <p class="text-gray-500 text-sm mb-1">💰 Receita do Período</p>
+            <p class="text-4xl font-bold text-green-600">$\${store.revenue?.toFixed(2) || '0.00'}</p>
+          </div>
+        </div>
+        
+        <div class="bg-white rounded-xl p-6 shadow-lg">
+          <div class="text-center">
+            <p class="text-gray-500 text-sm mb-1">📊 Total de Vendas</p>
+            <p class="text-4xl font-bold text-blue-600">\${store.transactions || 0}</p>
+          </div>
+        </div>
+        
+        <div class="bg-white rounded-xl p-6 shadow-lg">
+          <div class="text-center">
+            <p class="text-gray-500 text-sm mb-1">🎫 Ticket Médio</p>
+            <p class="text-4xl font-bold text-purple-600">$\${store.avgTicket?.toFixed(2) || '0.00'}</p>
+          </div>
+        </div>
+      \`;
     }
 
     function updateStoresGrid(stores) {
@@ -2905,7 +3241,10 @@ function getOwnerDashboardHTML() {
       document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.remove('active');
       });
-      document.getElementById('tab-' + tab).classList.add('active');
+      const tabElement = document.getElementById('tab-' + tab);
+      if (tabElement) {
+        tabElement.classList.add('active');
+      }
       
       // Load tab data
       if (tab === 'products') loadProducts();
@@ -2914,10 +3253,322 @@ function getOwnerDashboardHTML() {
       else if (tab === 'users') loadUsers();
       else if (tab === 'dashboard') loadData();
       else if (tab === 'cloud') loadCloudStatus();
+      else if (tab === 'sales') loadSalesData();
+      else if (tab === 'employees') loadEmployeesData();
     }
 
     function refreshCurrentTab() {
       switchTab(currentTab);
+    }
+
+    // =====================
+    // SALES MANAGEMENT
+    // =====================
+    let allSales = [];
+    
+    async function loadSalesData() {
+      try {
+        // Set default dates if not set
+        const startInput = document.getElementById('salesStartDate');
+        const endInput = document.getElementById('salesEndDate');
+        
+        if (!startInput.value) {
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          startInput.value = weekAgo.toISOString().split('T')[0];
+        }
+        if (!endInput.value) {
+          endInput.value = new Date().toISOString().split('T')[0];
+        }
+        
+        // Fetch sales from Supabase
+        const storeFilter = selectedStoreId !== 'all' ? '&store_id=' + selectedStoreId : '';
+        const response = await fetch(
+          API_BASE + '/api/owner/all-sales?password=' + encodeURIComponent(password) +
+          '&startDate=' + startInput.value + '&endDate=' + endInput.value + storeFilter
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          allSales = data.sales || [];
+          renderSalesTable();
+          updateSalesSummary();
+          loadOperatorsForFilter();
+        } else {
+          // Fallback: load from stores
+          loadSalesFromStores();
+        }
+      } catch (error) {
+        console.error('Error loading sales:', error);
+        loadSalesFromStores();
+      }
+    }
+    
+    async function loadSalesFromStores() {
+      try {
+        allSales = [];
+        const { startDate, endDate } = getDateRange();
+        
+        for (const store of allStoresData) {
+          if (selectedStoreId !== 'all' && store.id != selectedStoreId) continue;
+          
+          try {
+            const response = await fetch(
+              API_BASE + '/api/owner/store/' + store.id + '/sales?password=' + encodeURIComponent(password) +
+              '&startDate=' + startDate + '&endDate=' + endDate + '&limit=100'
+            );
+            if (response.ok) {
+              const data = await response.json();
+              if (data.sales) {
+                data.sales.forEach(sale => {
+                  sale.store_name = store.name;
+                  sale.store_id = store.id;
+                });
+                allSales.push(...data.sales);
+              }
+            }
+          } catch (e) {
+            console.error('Error loading store sales:', e);
+          }
+        }
+        
+        // Sort by date descending
+        allSales.sort((a, b) => new Date(b.created_at || b.timestamp) - new Date(a.created_at || a.timestamp));
+        
+        renderSalesTable();
+        updateSalesSummary();
+      } catch (error) {
+        console.error('Error loading sales from stores:', error);
+      }
+    }
+    
+    function renderSalesTable() {
+      const tbody = document.getElementById('salesTableBody');
+      const startIdx = (salesPage - 1) * salesPerPage;
+      const pageSales = allSales.slice(startIdx, startIdx + salesPerPage);
+      
+      if (pageSales.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-12 text-gray-400">Nenhuma venda encontrada para o período selecionado</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = pageSales.map(sale => {
+        const storeName = sale.store_name || allStoresData.find(s => s.id == sale.store_id)?.name || 'Loja ' + (sale.store_id || 1);
+        const operatorName = sale.user_name || sale.operator || 'Operador';
+        
+        return \`
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3">
+              <span class="font-mono text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">\${sale.sale_number || 'N/A'}</span>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">\${storeName}</td>
+            <td class="px-4 py-3 text-sm text-gray-600">\${new Date(sale.created_at || sale.timestamp).toLocaleString('pt-BR')}</td>
+            <td class="px-4 py-3 text-sm">\${operatorName}</td>
+            <td class="px-4 py-3 text-center text-sm">\${sale.items_count || '-'}</td>
+            <td class="px-4 py-3 text-right font-bold text-green-600">$\${(sale.total || 0).toFixed(2)}</td>
+            <td class="px-4 py-3 text-center">
+              <span class="px-2 py-1 rounded-full text-xs font-medium \${sale.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
+                \${sale.status || 'completed'}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <button onclick="viewSaleDetails('\${sale.id || sale.sale_number}')" class="text-blue-600 hover:text-blue-800 text-sm">
+                👁️ Ver
+              </button>
+            </td>
+          </tr>
+        \`;
+      }).join('');
+      
+      // Update pagination info
+      const totalPages = Math.ceil(allSales.length / salesPerPage);
+      document.getElementById('salesPaginationInfo').textContent = 
+        \`Mostrando \${startIdx + 1} - \${Math.min(startIdx + salesPerPage, allSales.length)} de \${allSales.length}\`;
+      document.getElementById('salesCurrentPage').textContent = \`Página \${salesPage} de \${totalPages}\`;
+    }
+    
+    function updateSalesSummary() {
+      const totalRevenue = allSales.reduce((sum, s) => sum + (s.total || 0), 0);
+      const totalCount = allSales.length;
+      const avgTicket = totalCount > 0 ? totalRevenue / totalCount : 0;
+      const itemsCount = allSales.reduce((sum, s) => sum + (s.items_count || 0), 0);
+      
+      document.getElementById('salesTotalRevenue').textContent = '$' + totalRevenue.toFixed(2);
+      document.getElementById('salesTotalCount').textContent = totalCount;
+      document.getElementById('salesAvgTicket').textContent = '$' + avgTicket.toFixed(2);
+      document.getElementById('salesItemsCount').textContent = itemsCount || '-';
+    }
+    
+    function changeSalesPage(delta) {
+      const totalPages = Math.ceil(allSales.length / salesPerPage);
+      salesPage = Math.max(1, Math.min(totalPages, salesPage + delta));
+      renderSalesTable();
+    }
+    
+    function loadOperatorsForFilter() {
+      const operators = [...new Set(allSales.map(s => s.user_name || s.operator).filter(Boolean))];
+      const select = document.getElementById('salesOperator');
+      if (select) {
+        select.innerHTML = '<option value="">Todos</option>' + 
+          operators.map(op => \`<option value="\${op}">\${op}</option>\`).join('');
+      }
+    }
+    
+    function viewSaleDetails(saleId) {
+      const sale = allSales.find(s => s.id == saleId || s.sale_number == saleId);
+      if (!sale) return;
+      
+      alert('Venda: ' + (sale.sale_number || saleId) + '\\nTotal: $' + (sale.total || 0).toFixed(2) + '\\nData: ' + new Date(sale.created_at || sale.timestamp).toLocaleString('pt-BR'));
+    }
+    
+    function exportSales(format) {
+      if (format === 'csv') {
+        let csv = 'Numero,Loja,Data,Operador,Total,Status\\n';
+        allSales.forEach(sale => {
+          const storeName = sale.store_name || allStoresData.find(s => s.id == sale.store_id)?.name || 'Loja';
+          csv += \`"\${sale.sale_number || ''}","\${storeName}","\${new Date(sale.created_at || sale.timestamp).toLocaleString('pt-BR')}","\${sale.user_name || ''}",\${sale.total || 0},"\${sale.status || 'completed'}"\\n\`;
+        });
+        
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'vendas_' + new Date().toISOString().split('T')[0] + '.csv';
+        a.click();
+        
+        showToast('📥 CSV exportado com sucesso!', 'success');
+      } else {
+        showToast('📄 Exportação PDF em desenvolvimento', 'info');
+      }
+    }
+
+    // =====================
+    // EMPLOYEES MANAGEMENT
+    // =====================
+    async function loadEmployeesData() {
+      try {
+        // Load users
+        const response = await fetch(API_BASE + '/api/admin/users?password=' + encodeURIComponent(password));
+        const data = await response.json();
+        let employees = data.users || [];
+        
+        // Filter by store if selected
+        if (selectedStoreId !== 'all') {
+          employees = employees.filter(e => !e.store_id || e.store_id == selectedStoreId);
+        }
+        
+        // Update summary
+        const cashiers = employees.filter(e => e.role === 'cashier').length;
+        const managers = employees.filter(e => e.role === 'manager' || e.role === 'admin').length;
+        
+        document.getElementById('totalEmployees').textContent = employees.length;
+        document.getElementById('activeEmployees').textContent = employees.filter(e => e.is_active !== false).length;
+        document.getElementById('totalCashiers').textContent = cashiers;
+        document.getElementById('totalManagers').textContent = managers;
+        
+        // Render employees grid
+        renderEmployeesGrid(employees);
+        
+        // Load ranking
+        loadEmployeesRanking(employees);
+        
+      } catch (error) {
+        console.error('Error loading employees:', error);
+      }
+    }
+    
+    function renderEmployeesGrid(employees) {
+      const grid = document.getElementById('employeesGrid');
+      
+      if (employees.length === 0) {
+        grid.innerHTML = '<div class="text-center py-8 text-gray-400 col-span-full"><p class="text-4xl mb-2">👔</p><p>Nenhum funcionário encontrado</p></div>';
+        return;
+      }
+      
+      const roleIcons = { 'admin': '⚙️', 'manager': '📋', 'cashier': '🛒' };
+      const roleNames = { 'admin': 'Administrador', 'manager': 'Gerente', 'cashier': 'Caixa' };
+      const roleColors = { 'admin': 'bg-red-100 text-red-700', 'manager': 'bg-purple-100 text-purple-700', 'cashier': 'bg-blue-100 text-blue-700' };
+      
+      grid.innerHTML = employees.map(emp => {
+        const isActive = emp.is_active !== false;
+        const storeName = emp.store_id ? (allStoresData.find(s => s.id == emp.store_id)?.name || 'Loja ' + emp.store_id) : 'Todas as lojas';
+        
+        return \`
+          <div class="bg-white rounded-xl p-4 border-2 \${isActive ? 'border-green-200' : 'border-gray-200'} hover:shadow-lg transition-all">
+            <div class="flex items-center gap-3 mb-3">
+              <div class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xl font-bold">
+                \${(emp.full_name || emp.username || 'U').charAt(0).toUpperCase()}
+              </div>
+              <div class="flex-1">
+                <h4 class="font-bold text-gray-800">\${emp.full_name || emp.username}</h4>
+                <p class="text-xs text-gray-500">@\${emp.username}</p>
+              </div>
+              <span class="w-3 h-3 rounded-full \${isActive ? 'bg-green-500' : 'bg-gray-400'}" title="\${isActive ? 'Ativo' : 'Inativo'}"></span>
+            </div>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-gray-500">Função</span>
+                <span class="px-2 py-1 rounded-full text-xs font-medium \${roleColors[emp.role] || 'bg-gray-100'}">
+                  \${roleIcons[emp.role] || '👤'} \${roleNames[emp.role] || emp.role}
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-gray-500">Loja</span>
+                <span class="text-xs text-gray-700">\${storeName}</span>
+              </div>
+            </div>
+          </div>
+        \`;
+      }).join('');
+    }
+    
+    async function loadEmployeesRanking(employees) {
+      const ranking = document.getElementById('employeesRanking');
+      
+      // Calculate sales by employee from allSales
+      const employeeSales = {};
+      allSales.forEach(sale => {
+        const name = sale.user_name || sale.operator || 'Desconhecido';
+        if (!employeeSales[name]) {
+          employeeSales[name] = { name, count: 0, total: 0 };
+        }
+        employeeSales[name].count++;
+        employeeSales[name].total += sale.total || 0;
+      });
+      
+      const sortedRanking = Object.values(employeeSales).sort((a, b) => b.total - a.total).slice(0, 10);
+      
+      if (sortedRanking.length === 0) {
+        ranking.innerHTML = '<div class="text-center py-8 text-gray-400"><p>Nenhuma venda no período</p></div>';
+        return;
+      }
+      
+      const maxTotal = sortedRanking[0]?.total || 1;
+      
+      ranking.innerHTML = sortedRanking.map((emp, idx) => {
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1) + 'º';
+        const percentage = (emp.total / maxTotal) * 100;
+        
+        return \`
+          <div class="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">\${medal}</span>
+              <div class="flex-1">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-medium text-gray-800">\${emp.name}</span>
+                  <span class="text-green-600 font-bold">$\${emp.total.toFixed(2)}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 bg-gray-200 rounded-full h-2">
+                    <div class="bg-gradient-to-r from-green-500 to-green-600 h-2 rounded-full" style="width: \${percentage}%"></div>
+                  </div>
+                  <span class="text-xs text-gray-500">\${emp.count} vendas</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        \`;
+      }).join('');
     }
 
     // =====================
