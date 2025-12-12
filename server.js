@@ -2308,6 +2308,32 @@ function getOwnerDashboardHTML() {
     let storeComparisonChart = null;
     const API_BASE = window.location.origin;
 
+    // Função para mostrar notificações toast
+    function showToast(message, type = 'info') {
+      // Remover toast anterior se existir
+      const existingToast = document.getElementById('toast-notification');
+      if (existingToast) existingToast.remove();
+      
+      const colors = {
+        'success': 'bg-green-500',
+        'error': 'bg-red-500',
+        'warning': 'bg-yellow-500',
+        'info': 'bg-blue-500'
+      };
+      
+      const toast = document.createElement('div');
+      toast.id = 'toast-notification';
+      toast.className = 'fixed top-4 right-4 ' + (colors[type] || colors.info) + ' text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-pulse';
+      toast.innerHTML = message;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.5s';
+        setTimeout(() => toast.remove(), 500);
+      }, 3000);
+    }
+
     // Login
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -3286,15 +3312,21 @@ function getOwnerDashboardHTML() {
 
     function loadProductPromotions(productId) {
       currentEditingProductId = productId;
-      const product = allProducts.find(p => p.id === productId);
-      if (!product) return;
+      const product = allProducts.find(p => p.id == productId);
       
-      // Filtrar promoções para este produto
-      const productPromos = allPromotions.filter(p => 
-        p.product_barcode === product.barcode || 
-        p.product_id === productId ||
-        (p.mix_match_products && p.mix_match_products.includes(product.barcode))
-      );
+      console.log('loadProductPromotions - productId:', productId);
+      console.log('loadProductPromotions - product:', product ? product.name : 'não encontrado');
+      console.log('loadProductPromotions - allPromotions:', allPromotions.length);
+      
+      // Filtrar promoções para este produto (comparação flexível)
+      const productPromos = allPromotions.filter(p => {
+        const matchBarcode = product && p.product_barcode && (p.product_barcode === product.barcode || p.product_barcode == productId);
+        const matchId = p.product_id == productId;
+        const matchMix = p.mix_match_products && product && p.mix_match_products.includes(product.barcode);
+        return matchBarcode || matchId || matchMix;
+      });
+      
+      console.log('loadProductPromotions - promoções encontradas:', productPromos.length);
       
       const list = document.getElementById('productPromosList');
       const count = document.getElementById('productPromosCount');
@@ -3445,13 +3477,46 @@ function getOwnerDashboardHTML() {
     }
 
     async function saveQuickPromo() {
-      if (!currentQuickPromoType || !currentEditingProductId) {
+      console.log('saveQuickPromo chamada');
+      console.log('currentQuickPromoType:', currentQuickPromoType);
+      console.log('currentEditingProductId:', currentEditingProductId);
+      console.log('password:', password ? 'definida' : 'NÃO DEFINIDA');
+      console.log('Total de produtos em allProducts:', allProducts.length);
+      
+      if (!currentQuickPromoType) {
         showToast('Selecione um tipo de promoção', 'error');
         return;
       }
       
-      const product = allProducts.find(p => p.id === currentEditingProductId);
-      if (!product) return;
+      if (!currentEditingProductId) {
+        showToast('Produto não identificado. Feche e abra novamente.', 'error');
+        return;
+      }
+      
+      // Buscar produto com comparação flexível (string ou number)
+      let product = allProducts.find(p => p.id == currentEditingProductId || String(p.id) === String(currentEditingProductId));
+      console.log('Produto encontrado:', product ? product.name : 'NÃO');
+      
+      if (!product) {
+        // Tentar pegar dados do formulário diretamente
+        const productName = document.getElementById('productName')?.value;
+        const productBarcode = currentProductBarcodes[0]?.barcode || document.getElementById('productId')?.value;
+        const productPrice = parseFloat(document.getElementById('productPrice')?.value) || 0;
+        
+        if (productName) {
+          console.log('Usando dados do formulário:', productName);
+          // Criar objeto produto a partir do formulário
+          product = {
+            id: currentEditingProductId,
+            name: productName,
+            barcode: productBarcode,
+            price: productPrice
+          };
+        } else {
+          showToast('Produto não encontrado. Salve o produto primeiro.', 'error');
+          return;
+        }
+      }
       
       const promotion = {
         name: product.name + ' - Promoção',
@@ -3498,11 +3563,12 @@ function getOwnerDashboardHTML() {
         
         if (response.ok) {
           const saved = await response.json();
-          if (saved.promotion) {
-            allPromotions.push(saved.promotion);
-          } else {
-            allPromotions.push(saved);
-          }
+          const promoToAdd = saved.promotion || saved;
+          // Garantir que product_id está definido
+          promoToAdd.product_id = currentEditingProductId;
+          allPromotions.push(promoToAdd);
+          console.log('Promoção adicionada:', promoToAdd);
+          console.log('Total de promoções agora:', allPromotions.length);
           showToast('Promoção criada com sucesso!', 'success');
           
           // Resetar campos
@@ -3516,10 +3582,13 @@ function getOwnerDashboardHTML() {
           // Recarregar lista de promoções
           loadProductPromotions(currentEditingProductId);
         } else {
-          showToast('Erro ao criar promoção', 'error');
+          const errorText = await response.text();
+          console.error('Erro na resposta:', response.status, errorText);
+          showToast('Erro ao criar promoção: ' + response.status, 'error');
         }
       } catch (error) {
-        showToast('Erro ao criar promoção', 'error');
+        console.error('Erro ao criar promoção:', error);
+        showToast('Erro ao criar promoção: ' + error.message, 'error');
       }
     }
 
