@@ -3694,16 +3694,25 @@ function getOwnerDashboardHTML() {
     
     async function loadStoresForUserSelect() {
       try {
-        // Buscar lojas do Supabase
         const select = document.getElementById('userStore');
         if (!select) return;
         
-        // Por enquanto, mostrar opção padrão
-        // Você pode adicionar endpoint para buscar lojas se necessário
-        select.innerHTML = '<option value="">Todas as lojas</option>' +
-          '<option value="1">Loja Principal</option>';
+        // Buscar lojas da API (que busca do Supabase)
+        const response = await fetch(API_BASE + '/api/owner/stores?password=' + encodeURIComponent(password));
+        if (response.ok) {
+          const data = await response.json();
+          const storesList = data.stores || [];
+          
+          select.innerHTML = '<option value="">Todas as lojas</option>' +
+            storesList.map(store => 
+              '<option value="' + store.id + '">' + store.name + '</option>'
+            ).join('');
+        } else {
+          select.innerHTML = '<option value="">Todas as lojas</option>';
+        }
       } catch (error) {
         console.error('Error loading stores:', error);
+        select.innerHTML = '<option value="">Todas as lojas</option>';
       }
     }
     
