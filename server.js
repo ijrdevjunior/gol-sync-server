@@ -893,7 +893,7 @@ app.get('/api/admin/cloud-status', checkOwnerAuth, async (req, res) => {
 });
 
 // Relatório consolidado de todas as lojas
-app.get('/api/owner/report', checkOwnerAuth, (req, res) => {
+app.get('/api/owner/report', checkOwnerAuth, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const start = startDate ? new Date(startDate) : new Date(0);
@@ -910,11 +910,75 @@ app.get('/api/owner/report', checkOwnerAuth, (req, res) => {
       }
     };
 
-    // Processar cada loja
+    // ✅ BUSCAR DO SUPABASE PRIMEIRO
+    if (useSupabase && supabase) {
+      console.log('📊 Gerando relatório do Supabase...');
+      
+      // Buscar lojas
+      const { data: supabaseStores } = await supabase.from('stores').select('*');
+      
+      // Buscar vendas filtradas por data
+      let salesQuery = supabase.from('sales').select('*');
+      if (startDate) salesQuery = salesQuery.gte('created_at', startDate + 'T00:00:00');
+      if (endDate) salesQuery = salesQuery.lte('created_at', endDate + 'T23:59:59');
+      const { data: allSales } = await salesQuery;
+      
+      // Agrupar vendas por loja
+      const salesByStore = {};
+      (allSales || []).forEach(sale => {
+        const sid = sale.store_id || 1;
+        if (!salesByStore[sid]) salesByStore[sid] = [];
+        salesByStore[sid].push(sale);
+      });
+      
+      // Processar cada loja
+      for (const store of (supabaseStores || [])) {
+        const sales = salesByStore[store.id] || [];
+        
+        const storeRevenue = sales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+        const storeTransactions = sales.length;
+        const storeAvgTicket = storeTransactions > 0 ? storeRevenue / storeTransactions : 0;
+
+        // Vendas por dia
+        const salesByDay = {};
+        sales.forEach(sale => {
+          const day = new Date(sale.created_at).toISOString().split('T')[0];
+          if (!salesByDay[day]) {
+            salesByDay[day] = { revenue: 0, transactions: 0 };
+          }
+          salesByDay[day].revenue += sale.total || 0;
+          salesByDay[day].transactions += 1;
+        });
+
+        report.stores.push({
+          id: store.id,
+          name: store.name,
+          address: store.address,
+          phone: store.phone,
+          revenue: storeRevenue,
+          transactions: storeTransactions,
+          avgTicket: storeAvgTicket,
+          salesByDay: salesByDay,
+          lastSale: sales.length > 0 ? 
+            sales.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] : null
+        });
+
+        report.totals.totalRevenue += storeRevenue;
+        report.totals.totalTransactions += storeTransactions;
+      }
+      
+      report.totals.avgTicket = report.totals.totalTransactions > 0 ? 
+        report.totals.totalRevenue / report.totals.totalTransactions : 0;
+
+      report.stores.sort((a, b) => b.revenue - a.revenue);
+      
+      return res.json(report);
+    }
+
+    // Fallback: memória
     for (const [storeId, sales] of salesStore.entries()) {
       const store = stores.get(storeId) || { id: storeId, name: `Loja ${storeId}` };
       
-      // Filtrar vendas por data
       const filteredSales = sales.filter(sale => {
         const saleDate = new Date(sale.created_at || sale.timestamp);
         return saleDate >= start && saleDate <= end;
@@ -924,7 +988,6 @@ app.get('/api/owner/report', checkOwnerAuth, (req, res) => {
       const storeTransactions = filteredSales.length;
       const storeAvgTicket = storeTransactions > 0 ? storeRevenue / storeTransactions : 0;
 
-      // Vendas por dia
       const salesByDay = {};
       filteredSales.forEach(sale => {
         const day = new Date(sale.created_at || sale.timestamp).toISOString().split('T')[0];
@@ -955,7 +1018,6 @@ app.get('/api/owner/report', checkOwnerAuth, (req, res) => {
     report.totals.avgTicket = report.totals.totalTransactions > 0 ? 
       report.totals.totalRevenue / report.totals.totalTransactions : 0;
 
-    // Ordenar lojas por receita (maior primeiro)
     report.stores.sort((a, b) => b.revenue - a.revenue);
 
     res.json(report);
@@ -966,10 +1028,52 @@ app.get('/api/owner/report', checkOwnerAuth, (req, res) => {
 });
 
 // Lista de todas as lojas com status
-app.get('/api/owner/stores', checkOwnerAuth, (req, res) => {
+app.get('/api/owner/stores', checkOwnerAuth, async (req, res) => {
   try {
     const storesList = [];
     
+    // ✅ BUSCAR DO SUPABASE PRIMEIRO
+    if (useSupabase && supabase) {
+      console.log('🏪 Buscando lojas do Supabase...');
+      const { data: supabaseStores, error } = await supabase.from('stores').select('*');
+      
+      if (!error && supabaseStores && supabaseStores.length > 0) {
+        console.log(`   ✅ ${supabaseStores.length} lojas encontradas no Supabase`);
+        
+        // Buscar vendas do Supabase para calcular estatísticas
+        const { data: allSales } = await supabase.from('sales').select('*');
+        const salesByStore = {};
+        (allSales || []).forEach(sale => {
+          const sid = sale.store_id || 1;
+          if (!salesByStore[sid]) salesByStore[sid] = [];
+          salesByStore[sid].push(sale);
+        });
+        
+        for (const store of supabaseStores) {
+          const sales = salesByStore[store.id] || [];
+          const lastSale = sales.length > 0 ? 
+            sales.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] : null;
+          
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const todaySales = sales.filter(sale => new Date(sale.created_at) >= today);
+          const todayRevenue = todaySales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+
+          storesList.push({
+            ...store,
+            totalSales: sales.length,
+            todaySales: todaySales.length,
+            todayRevenue: todayRevenue,
+            lastSaleAt: lastSale ? lastSale.created_at : null,
+            isActive: lastSale ? (new Date() - new Date(lastSale.created_at)) < 24 * 60 * 60 * 1000 : false
+          });
+        }
+        
+        return res.json({ stores: storesList });
+      }
+    }
+    
+    // Fallback: buscar da memória
     for (const [storeId, store] of stores.entries()) {
       const sales = salesStore.get(storeId) || [];
       const lastSale = sales.length > 0 ? 
