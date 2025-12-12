@@ -3357,9 +3357,9 @@ function getOwnerDashboardHTML() {
       if (!confirm('Tem certeza que deseja excluir esta promoção?')) return;
       
       try {
-        const response = await fetch('/api/admin/promotions?id=' + promoId, {
+        const response = await fetch('/api/admin/promotions/' + promoId + '?password=' + encodeURIComponent(password), {
           method: 'DELETE',
-          headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('token') }
+          headers: { 'X-Owner-Password': password }
         });
         
         if (response.ok) {
@@ -3487,18 +3487,22 @@ function getOwnerDashboardHTML() {
       }
       
       try {
-        const response = await fetch('/api/admin/promotions', {
+        const response = await fetch('/api/admin/promotions?password=' + encodeURIComponent(password), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + sessionStorage.getItem('token')
+            'X-Owner-Password': password
           },
           body: JSON.stringify(promotion)
         });
         
         if (response.ok) {
           const saved = await response.json();
-          allPromotions.push(saved);
+          if (saved.promotion) {
+            allPromotions.push(saved.promotion);
+          } else {
+            allPromotions.push(saved);
+          }
           showToast('Promoção criada com sucesso!', 'success');
           
           // Resetar campos
