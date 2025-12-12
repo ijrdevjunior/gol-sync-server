@@ -1525,6 +1525,9 @@ function getOwnerDashboardHTML() {
               <button type="button" onclick="switchProductTab('barcodes')" class="product-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-tab="barcodes">
                 📊 Códigos de Barras
               </button>
+              <button type="button" onclick="switchProductTab('promos')" class="product-tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-tab="promos">
+                🏷️ Promoções
+              </button>
             </div>
             
             <!-- Tab Informações -->
@@ -1613,6 +1616,134 @@ function getOwnerDashboardHTML() {
               <!-- Contador -->
               <div id="barcodesCount" class="text-sm text-gray-500 mt-2 text-right">
                 0 códigos de barras
+              </div>
+            </div>
+            
+            <!-- Tab Promoções -->
+            <div id="productTab-promos" class="product-tab-content hidden">
+              <div class="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <h3 class="font-semibold text-yellow-800 mb-1">🏷️ Promoções do Produto</h3>
+                <p class="text-sm text-yellow-700">
+                  Crie e gerencie promoções diretamente para este produto.
+                </p>
+              </div>
+              
+              <!-- Promoções Ativas -->
+              <div class="mb-4">
+                <div class="flex justify-between items-center mb-3">
+                  <h4 class="font-medium text-gray-700">Promoções Ativas</h4>
+                  <span id="productPromosCount" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">0 promoções</span>
+                </div>
+                <div id="productPromosList" class="space-y-2 max-h-[200px] overflow-y-auto">
+                  <div class="text-center py-4 text-gray-400">
+                    Nenhuma promoção ativa para este produto
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Criar Promoção Rápida -->
+              <div class="border-t pt-4">
+                <h4 class="font-medium text-gray-700 mb-3">➕ Criar Promoção Rápida</h4>
+                
+                <!-- Tipo de Promoção -->
+                <div class="grid grid-cols-2 gap-2 mb-4">
+                  <button type="button" onclick="selectQuickPromoType('fixed_price')" class="quick-promo-btn p-3 border-2 rounded-lg text-left hover:bg-blue-50 transition-colors" data-type="fixed_price">
+                    <span class="text-lg">💲</span>
+                    <span class="text-sm font-medium">Preço Fixo</span>
+                  </button>
+                  <button type="button" onclick="selectQuickPromoType('multi_buy')" class="quick-promo-btn p-3 border-2 rounded-lg text-left hover:bg-green-50 transition-colors" data-type="multi_buy">
+                    <span class="text-lg">📦</span>
+                    <span class="text-sm font-medium">Leve X por $Y</span>
+                  </button>
+                  <button type="button" onclick="selectQuickPromoType('buy_get')" class="quick-promo-btn p-3 border-2 rounded-lg text-left hover:bg-purple-50 transition-colors" data-type="buy_get">
+                    <span class="text-lg">🎁</span>
+                    <span class="text-sm font-medium">Compre X Leve Y</span>
+                  </button>
+                  <button type="button" onclick="selectQuickPromoType('percent_off')" class="quick-promo-btn p-3 border-2 rounded-lg text-left hover:bg-orange-50 transition-colors" data-type="percent_off">
+                    <span class="text-lg">📊</span>
+                    <span class="text-sm font-medium">Desconto %</span>
+                  </button>
+                </div>
+                
+                <!-- Campos da Promoção Rápida -->
+                <div id="quickPromoFields" class="hidden">
+                  <!-- Preço Fixo -->
+                  <div id="quickPromoFixed" class="quick-promo-field hidden">
+                    <div class="bg-blue-50 rounded-lg p-4">
+                      <label class="block text-sm font-medium text-gray-700 mb-2">Preço Promocional *</label>
+                      <div class="flex items-center gap-2">
+                        <span class="text-gray-500">$</span>
+                        <input type="number" step="0.01" id="quickPromoPrice" class="flex-1 px-3 py-2 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 text-lg font-bold" placeholder="0.00">
+                      </div>
+                      <p id="quickPromoSavings" class="text-sm text-green-600 mt-2"></p>
+                    </div>
+                  </div>
+                  
+                  <!-- Leve X por $Y -->
+                  <div id="quickPromoMultiBuy" class="quick-promo-field hidden">
+                    <div class="bg-green-50 rounded-lg p-4">
+                      <div class="grid grid-cols-3 gap-3 items-center">
+                        <div>
+                          <label class="block text-xs font-medium text-gray-700 mb-1">Leve</label>
+                          <input type="number" id="quickPromoQty" min="2" value="2" class="w-full px-3 py-2 border rounded-lg text-center font-bold">
+                        </div>
+                        <div class="text-center text-xl font-bold text-green-600">por</div>
+                        <div>
+                          <label class="block text-xs font-medium text-gray-700 mb-1">Valor $</label>
+                          <input type="number" step="0.01" id="quickPromoMultiPrice" class="w-full px-3 py-2 border rounded-lg text-center font-bold" placeholder="0.00">
+                        </div>
+                      </div>
+                      <p id="quickPromoMultiSavings" class="text-sm text-green-600 mt-2 text-center"></p>
+                    </div>
+                  </div>
+                  
+                  <!-- Compre X Leve Y -->
+                  <div id="quickPromoBuyGet" class="quick-promo-field hidden">
+                    <div class="bg-purple-50 rounded-lg p-4">
+                      <div class="grid grid-cols-3 gap-3 items-center">
+                        <div>
+                          <label class="block text-xs font-medium text-gray-700 mb-1">Compre</label>
+                          <input type="number" id="quickPromoBuy" min="1" value="2" class="w-full px-3 py-2 border rounded-lg text-center font-bold">
+                        </div>
+                        <div class="text-center text-xl font-bold text-purple-600">Leve</div>
+                        <div>
+                          <label class="block text-xs font-medium text-gray-700 mb-1">Unidades</label>
+                          <input type="number" id="quickPromoGet" min="2" value="3" class="w-full px-3 py-2 border rounded-lg text-center font-bold">
+                        </div>
+                      </div>
+                      <p id="quickPromoBuyGetInfo" class="text-sm text-purple-600 mt-2 text-center"></p>
+                    </div>
+                  </div>
+                  
+                  <!-- Desconto % -->
+                  <div id="quickPromoPercent" class="quick-promo-field hidden">
+                    <div class="bg-orange-50 rounded-lg p-4">
+                      <div class="flex items-center justify-center gap-2">
+                        <input type="number" id="quickPromoPercentValue" min="1" max="99" value="20" class="w-24 px-3 py-2 border rounded-lg text-center text-2xl font-bold">
+                        <span class="text-2xl font-bold text-orange-600">%</span>
+                        <span class="text-gray-600">de desconto</span>
+                      </div>
+                      <p id="quickPromoPercentInfo" class="text-sm text-orange-600 mt-2 text-center"></p>
+                    </div>
+                  </div>
+                  
+                  <!-- Datas -->
+                  <div class="grid grid-cols-2 gap-3 mt-4">
+                    <div>
+                      <label class="block text-xs font-medium text-gray-700 mb-1">Data Início</label>
+                      <input type="date" id="quickPromoStart" class="w-full px-3 py-2 border rounded-lg">
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-gray-700 mb-1">Data Fim</label>
+                      <input type="date" id="quickPromoEnd" class="w-full px-3 py-2 border rounded-lg">
+                    </div>
+                  </div>
+                  
+                  <!-- Botão Salvar -->
+                  <button type="button" onclick="saveQuickPromo()" class="w-full mt-4 px-4 py-3 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-lg hover:from-yellow-600 hover:to-orange-600 font-bold">
+                    🏷️ Criar Promoção
+                  </button>
+                </div>
               </div>
             </div>
             
@@ -2608,6 +2739,8 @@ function getOwnerDashboardHTML() {
 
     // Array para armazenar códigos de barras do produto atual
     let currentProductBarcodes = [];
+    let currentQuickPromoType = null;
+    let currentEditingProductId = null;
 
     function switchProductTab(tab) {
       document.querySelectorAll('.product-tab-btn').forEach(btn => {
@@ -2664,6 +2797,24 @@ function getOwnerDashboardHTML() {
         }
       }
       renderBarcodesList();
+      
+      // Carregar promoções do produto
+      currentEditingProductId = product ? product.id : null;
+      if (product) {
+        loadProductPromotions(product.id);
+      } else {
+        // Limpar lista de promoções para novo produto
+        document.getElementById('productPromosList').innerHTML = '<div class="text-center py-4 text-gray-400">Salve o produto primeiro para adicionar promoções</div>';
+        document.getElementById('productPromosCount').textContent = '0 promoções';
+      }
+      
+      // Resetar promoção rápida
+      currentQuickPromoType = null;
+      document.getElementById('quickPromoFields').classList.add('hidden');
+      document.querySelectorAll('.quick-promo-btn').forEach(btn => {
+        btn.classList.remove('border-blue-500', 'bg-blue-50', 'border-green-500', 'bg-green-50', 
+                            'border-purple-500', 'bg-purple-50', 'border-orange-500', 'bg-orange-50');
+      });
       
       // Resetar para aba de informações
       switchProductTab('info');
@@ -2741,6 +2892,253 @@ function getOwnerDashboardHTML() {
       currentProductBarcodes.unshift(primary);
       renderBarcodesList();
     }
+
+    // =====================
+    // PROMOÇÕES DENTRO DO PRODUTO
+    // =====================
+
+    function loadProductPromotions(productId) {
+      currentEditingProductId = productId;
+      const product = allProducts.find(p => p.id === productId);
+      if (!product) return;
+      
+      // Filtrar promoções para este produto
+      const productPromos = allPromotions.filter(p => 
+        p.product_barcode === product.barcode || 
+        p.product_id === productId ||
+        (p.mix_match_products && p.mix_match_products.includes(product.barcode))
+      );
+      
+      const list = document.getElementById('productPromosList');
+      const count = document.getElementById('productPromosCount');
+      
+      count.textContent = productPromos.length + ' promoção' + (productPromos.length !== 1 ? 'ões' : '');
+      
+      if (productPromos.length === 0) {
+        list.innerHTML = '<div class="text-center py-4 text-gray-400">Nenhuma promoção ativa para este produto</div>';
+        return;
+      }
+      
+      list.innerHTML = productPromos.map(p => {
+        const typeConfig = {
+          'fixed_price': { icon: '💲', color: 'blue', label: 'Preço Fixo' },
+          'multi_buy': { icon: '📦', color: 'green', label: 'Leve X por $Y' },
+          'buy_get': { icon: '🎁', color: 'purple', label: 'Compre X Leve Y' },
+          'percent_off': { icon: '📊', color: 'orange', label: 'Desconto %' },
+          'mix_match': { icon: '🎨', color: 'pink', label: 'Mix & Match' }
+        };
+        const config = typeConfig[p.promo_type] || typeConfig['fixed_price'];
+        
+        let details = '';
+        if (p.promo_type === 'fixed_price') {
+          details = 'Por $' + (p.promotional_price || p.price || 0).toFixed(2);
+        } else if (p.promo_type === 'multi_buy') {
+          details = 'Leve ' + (p.multi_buy_qty || 2) + ' por $' + (p.multi_buy_price || 0).toFixed(2);
+        } else if (p.promo_type === 'buy_get') {
+          details = 'Compre ' + (p.buy_qty || 2) + ' leve ' + (p.get_qty || 3);
+        } else if (p.promo_type === 'percent_off') {
+          details = (p.percent_off || 20) + '% de desconto';
+        } else if (p.promo_type === 'mix_match') {
+          details = 'Escolha ' + (p.mix_match_qty || 3) + ' por $' + (p.mix_match_price || 0).toFixed(2);
+        }
+        
+        return '<div class="flex items-center justify-between p-3 bg-' + config.color + '-50 border border-' + config.color + '-200 rounded-lg">' +
+          '<div class="flex items-center gap-2">' +
+            '<span class="text-lg">' + config.icon + '</span>' +
+            '<div>' +
+              '<p class="font-medium text-gray-800">' + (p.name || 'Promoção') + '</p>' +
+              '<p class="text-xs text-' + config.color + '-600">' + details + '</p>' +
+            '</div>' +
+          '</div>' +
+          '<div class="flex items-center gap-2">' +
+            '<button type="button" onclick="editPromotionFromProduct(' + p.id + ')" class="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Editar">✏️</button>' +
+            '<button type="button" onclick="deletePromotionFromProduct(' + p.id + ')" class="p-1 text-red-600 hover:bg-red-100 rounded" title="Excluir">🗑️</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function editPromotionFromProduct(promoId) {
+      const promotion = allPromotions.find(p => p.id === promoId);
+      if (promotion) {
+        closeProductModal();
+        setTimeout(() => openPromotionModal(promotion), 100);
+      }
+    }
+
+    async function deletePromotionFromProduct(promoId) {
+      if (!confirm('Tem certeza que deseja excluir esta promoção?')) return;
+      
+      try {
+        const response = await fetch('/api/admin/promotions?id=' + promoId, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('token') }
+        });
+        
+        if (response.ok) {
+          allPromotions = allPromotions.filter(p => p.id !== promoId);
+          loadProductPromotions(currentEditingProductId);
+          showToast('Promoção excluída!', 'success');
+        }
+      } catch (error) {
+        showToast('Erro ao excluir promoção', 'error');
+      }
+    }
+
+    function selectQuickPromoType(type) {
+      currentQuickPromoType = type;
+      
+      // Mostrar campos
+      document.getElementById('quickPromoFields').classList.remove('hidden');
+      
+      // Esconder todos os campos específicos
+      document.querySelectorAll('.quick-promo-field').forEach(el => el.classList.add('hidden'));
+      
+      // Resetar botões
+      document.querySelectorAll('.quick-promo-btn').forEach(btn => {
+        btn.classList.remove('border-blue-500', 'bg-blue-50', 'border-green-500', 'bg-green-50', 
+                            'border-purple-500', 'bg-purple-50', 'border-orange-500', 'bg-orange-50');
+      });
+      
+      // Mostrar campo e destacar botão
+      const colors = {
+        'fixed_price': { field: 'quickPromoFixed', colors: ['border-blue-500', 'bg-blue-50'] },
+        'multi_buy': { field: 'quickPromoMultiBuy', colors: ['border-green-500', 'bg-green-50'] },
+        'buy_get': { field: 'quickPromoBuyGet', colors: ['border-purple-500', 'bg-purple-50'] },
+        'percent_off': { field: 'quickPromoPercent', colors: ['border-orange-500', 'bg-orange-50'] }
+      };
+      
+      const config = colors[type];
+      if (config) {
+        document.getElementById(config.field).classList.remove('hidden');
+        const btn = document.querySelector('.quick-promo-btn[data-type="' + type + '"]');
+        if (btn) btn.classList.add(...config.colors);
+      }
+      
+      // Atualizar informações baseadas no preço do produto
+      updateQuickPromoInfo();
+    }
+
+    function updateQuickPromoInfo() {
+      const productPrice = parseFloat(document.getElementById('productPrice').value) || 0;
+      
+      // Preço fixo - mostrar economia
+      const promoPrice = parseFloat(document.getElementById('quickPromoPrice')?.value) || 0;
+      if (promoPrice > 0 && productPrice > 0) {
+        const savings = productPrice - promoPrice;
+        const savingsPercent = ((savings / productPrice) * 100).toFixed(0);
+        document.getElementById('quickPromoSavings').textContent = 
+          'Economia de $' + savings.toFixed(2) + ' (' + savingsPercent + '% off)';
+      }
+      
+      // Multi-buy
+      const multiQty = parseInt(document.getElementById('quickPromoQty')?.value) || 2;
+      const multiPrice = parseFloat(document.getElementById('quickPromoMultiPrice')?.value) || 0;
+      if (multiPrice > 0 && productPrice > 0) {
+        const originalTotal = multiQty * productPrice;
+        const savings = originalTotal - multiPrice;
+        document.getElementById('quickPromoMultiSavings').textContent = 
+          'De $' + originalTotal.toFixed(2) + ' por $' + multiPrice.toFixed(2) + ' (economia de $' + savings.toFixed(2) + ')';
+      }
+      
+      // Buy Get
+      const buyQty = parseInt(document.getElementById('quickPromoBuy')?.value) || 2;
+      const getQty = parseInt(document.getElementById('quickPromoGet')?.value) || 3;
+      const freeQty = getQty - buyQty;
+      document.getElementById('quickPromoBuyGetInfo').textContent = 
+        'Cliente paga ' + buyQty + ', leva ' + getQty + ' (' + freeQty + ' grátis!)';
+      
+      // Percent
+      const percent = parseInt(document.getElementById('quickPromoPercentValue')?.value) || 20;
+      if (productPrice > 0) {
+        const finalPrice = productPrice * (1 - percent / 100);
+        document.getElementById('quickPromoPercentInfo').textContent = 
+          'De $' + productPrice.toFixed(2) + ' por $' + finalPrice.toFixed(2);
+      }
+    }
+
+    async function saveQuickPromo() {
+      if (!currentQuickPromoType || !currentEditingProductId) {
+        showToast('Selecione um tipo de promoção', 'error');
+        return;
+      }
+      
+      const product = allProducts.find(p => p.id === currentEditingProductId);
+      if (!product) return;
+      
+      const promotion = {
+        name: product.name + ' - Promoção',
+        product_barcode: product.barcode || product.id,
+        product_id: product.id,
+        promo_type: currentQuickPromoType,
+        start_date: document.getElementById('quickPromoStart').value || null,
+        end_date: document.getElementById('quickPromoEnd').value || null,
+        is_active: true
+      };
+      
+      // Preencher campos específicos
+      if (currentQuickPromoType === 'fixed_price') {
+        promotion.promotional_price = parseFloat(document.getElementById('quickPromoPrice').value) || 0;
+        promotion.regular_price = product.price;
+        promotion.price = promotion.promotional_price;
+        if (!promotion.promotional_price) {
+          showToast('Informe o preço promocional', 'error');
+          return;
+        }
+      } else if (currentQuickPromoType === 'multi_buy') {
+        promotion.multi_buy_qty = parseInt(document.getElementById('quickPromoQty').value) || 2;
+        promotion.multi_buy_price = parseFloat(document.getElementById('quickPromoMultiPrice').value) || 0;
+        if (!promotion.multi_buy_price) {
+          showToast('Informe o valor da promoção', 'error');
+          return;
+        }
+      } else if (currentQuickPromoType === 'buy_get') {
+        promotion.buy_qty = parseInt(document.getElementById('quickPromoBuy').value) || 2;
+        promotion.get_qty = parseInt(document.getElementById('quickPromoGet').value) || 3;
+      } else if (currentQuickPromoType === 'percent_off') {
+        promotion.percent_off = parseInt(document.getElementById('quickPromoPercentValue').value) || 20;
+      }
+      
+      try {
+        const response = await fetch('/api/admin/promotions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + sessionStorage.getItem('token')
+          },
+          body: JSON.stringify(promotion)
+        });
+        
+        if (response.ok) {
+          const saved = await response.json();
+          allPromotions.push(saved);
+          showToast('Promoção criada com sucesso!', 'success');
+          
+          // Resetar campos
+          currentQuickPromoType = null;
+          document.getElementById('quickPromoFields').classList.add('hidden');
+          document.querySelectorAll('.quick-promo-btn').forEach(btn => {
+            btn.classList.remove('border-blue-500', 'bg-blue-50', 'border-green-500', 'bg-green-50', 
+                                'border-purple-500', 'bg-purple-50', 'border-orange-500', 'bg-orange-50');
+          });
+          
+          // Recarregar lista de promoções
+          loadProductPromotions(currentEditingProductId);
+        } else {
+          showToast('Erro ao criar promoção', 'error');
+        }
+      } catch (error) {
+        showToast('Erro ao criar promoção', 'error');
+      }
+    }
+
+    // Event listeners para atualizar info de promoção rápida
+    document.addEventListener('DOMContentLoaded', function() {
+      ['quickPromoPrice', 'quickPromoQty', 'quickPromoMultiPrice', 'quickPromoBuy', 'quickPromoGet', 'quickPromoPercentValue'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', updateQuickPromoInfo);
+      });
+    });
 
     function closeProductModal() {
       document.getElementById('productModal').classList.add('hidden');
