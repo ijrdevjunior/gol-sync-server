@@ -1216,6 +1216,7 @@ app.get('/api/owner/all-sales', checkOwnerAuth, async (req, res) => {
     const { startDate, endDate, store_id } = req.query;
     
     let sales = [];
+    let users = [];
     
     // Buscar do Supabase primeiro
     if (useSupabase && supabase) {
@@ -1234,6 +1235,12 @@ app.get('/api/owner/all-sales', checkOwnerAuth, async (req, res) => {
       const { data, error } = await query.limit(500);
       if (!error && data) {
         sales = data;
+      }
+      
+      // Buscar usuários do Supabase
+      const { data: usersData, error: usersError } = await supabase.from('users').select('id, username, full_name, role');
+      if (!usersError && usersData) {
+        users = usersData;
       }
     } else {
       // Fallback: memória
@@ -1261,10 +1268,18 @@ app.get('/api/owner/all-sales', checkOwnerAuth, async (req, res) => {
     const storeMap = {};
     stores.forEach(s => storeMap[s.id] = s.name);
     
-    // Adicionar nome da loja a cada venda
+    // Criar mapa de usuários
+    const userMap = {};
+    users.forEach(u => {
+      userMap[u.id] = u.full_name || u.username || 'Usuário ' + u.id;
+    });
+    
+    // Adicionar nome da loja e operador a cada venda
     sales = sales.map(sale => ({
       ...sale,
-      store_name: storeMap[sale.store_id] || 'Loja ' + (sale.store_id || 1)
+      store_name: storeMap[sale.store_id] || 'Loja ' + (sale.store_id || 1),
+      user_name: sale.user_name || userMap[sale.user_id] || sale.cashier_name || 'Não identificado',
+      operator: sale.user_name || userMap[sale.user_id] || sale.cashier_name || 'Não identificado'
     }));
     
     res.json({
@@ -1946,88 +1961,129 @@ function getOwnerDashboardHTML() {
 
       <!-- SALES TAB -->
       <div id="tab-sales" class="tab-content">
-        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
-          <div class="flex items-center justify-between mb-6">
+        <!-- Header com Título e Ações -->
+        <div class="bg-gradient-to-r from-green-600 to-green-700 rounded-xl p-6 mb-6 text-white">
+          <div class="flex items-center justify-between">
             <div>
-              <h2 class="text-xl font-bold text-gray-800">💵 Vendas Detalhadas</h2>
-              <p id="salesStoreInfo" class="text-sm text-gray-500">Todas as lojas</p>
+              <h2 class="text-2xl font-bold flex items-center gap-2">💵 Central de Vendas</h2>
+              <p id="salesStoreInfo" class="text-green-100 mt-1">Todas as lojas</p>
             </div>
             <div class="flex items-center gap-3">
-              <button onclick="exportSales('csv')" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
-                📥 Exportar CSV
+              <button onclick="exportSales('csv')" class="px-4 py-2 bg-white/20 rounded-lg hover:bg-white/30 text-sm font-medium flex items-center gap-2">
+                📥 CSV
               </button>
-              <button onclick="exportSales('pdf')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">
-                📄 Exportar PDF
+              <button onclick="printSalesReport()" class="px-4 py-2 bg-white/20 rounded-lg hover:bg-white/30 text-sm font-medium flex items-center gap-2">
+                🖨️ Imprimir
               </button>
             </div>
           </div>
-          
-          <!-- Filtros -->
+        </div>
+
+        <!-- Cards de Resumo Grande -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-green-100 text-sm">Receita Total</p>
+                <p id="salesTotalRevenue" class="text-3xl font-bold mt-1">$0.00</p>
+              </div>
+              <div class="text-4xl opacity-50">💰</div>
+            </div>
+          </div>
+          <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-blue-100 text-sm">Total Vendas</p>
+                <p id="salesTotalCount" class="text-3xl font-bold mt-1">0</p>
+              </div>
+              <div class="text-4xl opacity-50">🧾</div>
+            </div>
+          </div>
+          <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-purple-100 text-sm">Ticket Médio</p>
+                <p id="salesAvgTicket" class="text-3xl font-bold mt-1">$0.00</p>
+              </div>
+              <div class="text-4xl opacity-50">📊</div>
+            </div>
+          </div>
+          <div class="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-5 text-white shadow-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-orange-100 text-sm">Dinheiro</p>
+                <p id="salesCashTotal" class="text-3xl font-bold mt-1">$0.00</p>
+              </div>
+              <div class="text-4xl opacity-50">💵</div>
+            </div>
+          </div>
+          <div class="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-5 text-white shadow-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-pink-100 text-sm">Cartões/PIX</p>
+                <p id="salesCardTotal" class="text-3xl font-bold mt-1">$0.00</p>
+              </div>
+              <div class="text-4xl opacity-50">💳</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+          <!-- Filtros Avançados -->
           <div class="bg-gray-50 rounded-xl p-4 mb-6">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-lg">🔍</span>
+              <h3 class="font-semibold text-gray-700">Filtros</h3>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">📅 Data Início</label>
-                <input type="date" id="salesStartDate" class="w-full px-3 py-2 border rounded-lg" onchange="loadSalesData()">
+                <input type="date" id="salesStartDate" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" onchange="filterSalesData()">
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">📅 Data Fim</label>
-                <input type="date" id="salesEndDate" class="w-full px-3 py-2 border rounded-lg" onchange="loadSalesData()">
+                <input type="date" id="salesEndDate" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" onchange="filterSalesData()">
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-600 mb-1">👤 Operador</label>
-                <select id="salesOperator" class="w-full px-3 py-2 border rounded-lg" onchange="loadSalesData()">
-                  <option value="">Todos</option>
+                <label class="block text-xs font-medium text-gray-600 mb-1">👤 Operador/Caixa</label>
+                <select id="salesOperator" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" onchange="filterSalesData()">
+                  <option value="">Todos os operadores</option>
                 </select>
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">💳 Pagamento</label>
-                <select id="salesPayment" class="w-full px-3 py-2 border rounded-lg" onchange="loadSalesData()">
+                <select id="salesPayment" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" onchange="filterSalesData()">
                   <option value="">Todos</option>
-                  <option value="cash">Dinheiro</option>
-                  <option value="credit">Cartão Crédito</option>
-                  <option value="debit">Cartão Débito</option>
-                  <option value="pix">PIX</option>
+                  <option value="cash">💵 Dinheiro</option>
+                  <option value="credit">💳 Crédito</option>
+                  <option value="debit">💳 Débito</option>
+                  <option value="pix">📱 PIX</option>
                 </select>
+              </div>
+              <div class="flex items-end">
+                <button onclick="loadSalesData()" class="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
+                  🔄 Atualizar
+                </button>
               </div>
             </div>
           </div>
           
-          <!-- Resumo -->
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div class="bg-green-50 rounded-xl p-4 text-center border border-green-200">
-              <p id="salesTotalRevenue" class="text-2xl font-bold text-green-600">$0.00</p>
-              <p class="text-xs text-gray-600">Receita Total</p>
-            </div>
-            <div class="bg-blue-50 rounded-xl p-4 text-center border border-blue-200">
-              <p id="salesTotalCount" class="text-2xl font-bold text-blue-600">0</p>
-              <p class="text-xs text-gray-600">Total de Vendas</p>
-            </div>
-            <div class="bg-purple-50 rounded-xl p-4 text-center border border-purple-200">
-              <p id="salesAvgTicket" class="text-2xl font-bold text-purple-600">$0.00</p>
-              <p class="text-xs text-gray-600">Ticket Médio</p>
-            </div>
-            <div class="bg-orange-50 rounded-xl p-4 text-center border border-orange-200">
-              <p id="salesItemsCount" class="text-2xl font-bold text-orange-600">0</p>
-              <p class="text-xs text-gray-600">Itens Vendidos</p>
-            </div>
-          </div>
-          
-          <!-- Tabela de Vendas -->
-          <div class="overflow-x-auto border rounded-lg">
+          <!-- Tabela de Vendas Profissional -->
+          <div class="overflow-x-auto border rounded-xl">
             <table class="w-full">
-              <thead class="bg-gray-100">
+              <thead class="bg-gradient-to-r from-gray-800 to-gray-900 text-white">
                 <tr>
-                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Nº Venda</th>
-                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Loja</th>
-                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Data/Hora</th>
-                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Operador</th>
-                  <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Itens</th>
-                  <th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
-                  <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Status</th>
-                  <th class="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Ações</th>
+                  <th class="px-4 py-4 text-left text-xs font-semibold uppercase tracking-wider">Venda</th>
+                  <th class="px-4 py-4 text-left text-xs font-semibold uppercase tracking-wider">🏪 Loja</th>
+                  <th class="px-4 py-4 text-left text-xs font-semibold uppercase tracking-wider">📅 Data/Hora</th>
+                  <th class="px-4 py-4 text-left text-xs font-semibold uppercase tracking-wider">👤 Operador</th>
+                  <th class="px-4 py-4 text-center text-xs font-semibold uppercase tracking-wider">💳 Pagamento</th>
+                  <th class="px-4 py-4 text-center text-xs font-semibold uppercase tracking-wider">📦 Itens</th>
+                  <th class="px-4 py-4 text-right text-xs font-semibold uppercase tracking-wider">💰 Total</th>
+                  <th class="px-4 py-4 text-center text-xs font-semibold uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
-              <tbody id="salesTableBody" class="divide-y divide-gray-100">
+              <tbody id="salesTableBody" class="divide-y divide-gray-100 bg-white">
                 <tr><td colspan="8" class="text-center py-12 text-gray-400">
                   <div class="animate-pulse">⏳ Carregando vendas...</div>
                 </td></tr>
@@ -2035,13 +2091,31 @@ function getOwnerDashboardHTML() {
             </table>
           </div>
           
-          <!-- Paginação -->
-          <div class="flex items-center justify-between mt-4 px-2">
-            <div id="salesPaginationInfo" class="text-sm text-gray-600">Mostrando 0 de 0</div>
-            <div class="flex gap-2">
-              <button onclick="changeSalesPage(-1)" class="px-3 py-1 rounded border hover:bg-gray-100 text-sm">◀️ Anterior</button>
-              <span id="salesCurrentPage" class="px-3 py-1 text-sm">1</span>
-              <button onclick="changeSalesPage(1)" class="px-3 py-1 rounded border hover:bg-gray-100 text-sm">Próxima ▶️</button>
+          <!-- Paginação Melhorada -->
+          <div class="flex items-center justify-between mt-6 px-2">
+            <div id="salesPaginationInfo" class="text-sm text-gray-600 font-medium">Mostrando 0 de 0</div>
+            <div class="flex items-center gap-2">
+              <button onclick="changeSalesPage(-10)" class="px-3 py-2 rounded-lg border hover:bg-gray-100 text-sm" title="10 páginas anteriores">⏮️</button>
+              <button onclick="changeSalesPage(-1)" class="px-4 py-2 rounded-lg border hover:bg-gray-100 text-sm font-medium">◀️ Anterior</button>
+              <span id="salesCurrentPage" class="px-4 py-2 bg-green-600 text-white rounded-lg font-medium">1</span>
+              <button onclick="changeSalesPage(1)" class="px-4 py-2 rounded-lg border hover:bg-gray-100 text-sm font-medium">Próxima ▶️</button>
+              <button onclick="changeSalesPage(10)" class="px-3 py-2 rounded-lg border hover:bg-gray-100 text-sm" title="10 páginas seguintes">⏭️</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Modal de Detalhes da Venda -->
+        <div id="saleDetailModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+          <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden mx-4 shadow-2xl">
+            <div class="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 flex justify-between items-center">
+              <div>
+                <h3 id="saleDetailTitle" class="text-xl font-bold">Detalhes da Venda</h3>
+                <p id="saleDetailSubtitle" class="text-green-100 text-sm"></p>
+              </div>
+              <button onclick="closeSaleDetailModal()" class="p-2 hover:bg-white/20 rounded-lg text-xl">✕</button>
+            </div>
+            <div id="saleDetailContent" class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+              <!-- Conteúdo será preenchido dinamicamente -->
             </div>
           </div>
         </div>
@@ -3454,32 +3528,88 @@ function getOwnerDashboardHTML() {
       const pageSales = allSales.slice(startIdx, startIdx + salesPerPage);
       
       if (pageSales.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-12 text-gray-400">Nenhuma venda encontrada para o período selecionado</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-16 text-gray-400"><div class="text-5xl mb-3">📭</div><p class="text-lg">Nenhuma venda encontrada</p><p class="text-sm">Ajuste os filtros ou período</p></td></tr>';
         return;
       }
       
-      tbody.innerHTML = pageSales.map(sale => {
-        const storeName = sale.store_name || allStoresData.find(s => s.id == sale.store_id)?.name || 'Loja ' + (sale.store_id || 1);
-        const operatorName = sale.user_name || sale.operator || 'Operador';
+      const paymentIcons = {
+        'cash': '💵',
+        'credit': '💳',
+        'debit': '💳',
+        'pix': '📱',
+        'mixed': '🔄'
+      };
+      
+      const paymentLabels = {
+        'cash': 'Dinheiro',
+        'credit': 'Crédito',
+        'debit': 'Débito',
+        'pix': 'PIX',
+        'mixed': 'Misto'
+      };
+      
+      tbody.innerHTML = pageSales.map((sale, idx) => {
+        const storeName = sale.store_name || allStoresData.find(s => s.id == sale.store_id)?.name || 'Loja';
+        const operatorName = sale.user_name || sale.operator || sale.cashier_name || 'Não identificado';
+        const paymentType = sale.payment_method || sale.payment_type || 'cash';
+        const paymentIcon = paymentIcons[paymentType] || '💰';
+        const paymentLabel = paymentLabels[paymentType] || paymentType;
+        const saleDate = new Date(sale.created_at || sale.timestamp);
+        const isToday = new Date().toDateString() === saleDate.toDateString();
         
         return \`
-          <tr class="hover:bg-gray-50">
-            <td class="px-4 py-3">
-              <span class="font-mono text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">\${sale.sale_number || 'N/A'}</span>
+          <tr class="hover:bg-green-50 transition-colors \${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}">
+            <td class="px-4 py-4">
+              <div class="flex flex-col">
+                <span class="font-mono text-sm font-bold bg-gradient-to-r from-green-100 to-green-200 text-green-800 px-3 py-1 rounded-lg inline-block">
+                  #\${sale.sale_number || sale.id || 'N/A'}
+                </span>
+              </div>
             </td>
-            <td class="px-4 py-3 text-sm text-gray-700">\${storeName}</td>
-            <td class="px-4 py-3 text-sm text-gray-600">\${new Date(sale.created_at || sale.timestamp).toLocaleString('pt-BR')}</td>
-            <td class="px-4 py-3 text-sm">\${operatorName}</td>
-            <td class="px-4 py-3 text-center text-sm">\${sale.items_count || '-'}</td>
-            <td class="px-4 py-3 text-right font-bold text-green-600">$\${(sale.total || 0).toFixed(2)}</td>
-            <td class="px-4 py-3 text-center">
-              <span class="px-2 py-1 rounded-full text-xs font-medium \${sale.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
-                \${sale.status || 'completed'}
+            <td class="px-4 py-4">
+              <div class="flex items-center gap-2">
+                <span class="text-lg">🏪</span>
+                <span class="text-sm font-medium text-gray-700">\${storeName}</span>
+              </div>
+            </td>
+            <td class="px-4 py-4">
+              <div class="flex flex-col">
+                <span class="text-sm font-medium text-gray-800">\${saleDate.toLocaleDateString('pt-BR')}</span>
+                <span class="text-xs text-gray-500">\${saleDate.toLocaleTimeString('pt-BR')} \${isToday ? '<span class="bg-green-100 text-green-700 px-1 rounded text-xs ml-1">Hoje</span>' : ''}</span>
+              </div>
+            </td>
+            <td class="px-4 py-4">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
+                  \${operatorName.charAt(0).toUpperCase()}
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-sm font-semibold text-gray-800">\${operatorName}</span>
+                  <span class="text-xs text-gray-500">Caixa</span>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-4 text-center">
+              <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium \${
+                paymentType === 'cash' ? 'bg-green-100 text-green-700' :
+                paymentType === 'pix' ? 'bg-purple-100 text-purple-700' :
+                'bg-blue-100 text-blue-700'
+              }">
+                \${paymentIcon} \${paymentLabel}
               </span>
             </td>
-            <td class="px-4 py-3 text-center">
-              <button onclick="viewSaleDetails('\${sale.id || sale.sale_number}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                👁️ Ver
+            <td class="px-4 py-4 text-center">
+              <span class="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium">
+                \${sale.items_count || sale.items?.length || '-'} itens
+              </span>
+            </td>
+            <td class="px-4 py-4 text-right">
+              <span class="text-lg font-bold text-green-600">$\${(sale.total || 0).toFixed(2)}</span>
+            </td>
+            <td class="px-4 py-4 text-center">
+              <button onclick="viewSaleDetails('\${sale.id || sale.sale_number}')" 
+                class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+                👁️ Detalhes
               </button>
             </td>
           </tr>
@@ -3489,20 +3619,48 @@ function getOwnerDashboardHTML() {
       // Update pagination info
       const totalPages = Math.ceil(allSales.length / salesPerPage);
       document.getElementById('salesPaginationInfo').textContent = 
-        \`Mostrando \${startIdx + 1} - \${Math.min(startIdx + salesPerPage, allSales.length)} de \${allSales.length}\`;
-      document.getElementById('salesCurrentPage').textContent = \`Página \${salesPage} de \${totalPages}\`;
+        \`Mostrando \${startIdx + 1} - \${Math.min(startIdx + salesPerPage, allSales.length)} de \${allSales.length} vendas\`;
+      document.getElementById('salesCurrentPage').textContent = \`\${salesPage} / \${totalPages}\`;
     }
     
     function updateSalesSummary() {
       const totalRevenue = allSales.reduce((sum, s) => sum + (s.total || 0), 0);
       const totalCount = allSales.length;
       const avgTicket = totalCount > 0 ? totalRevenue / totalCount : 0;
-      const itemsCount = allSales.reduce((sum, s) => sum + (s.items_count || 0), 0);
+      
+      // Calcular por tipo de pagamento
+      let cashTotal = 0, cardTotal = 0;
+      allSales.forEach(sale => {
+        const paymentType = sale.payment_method || sale.payment_type || 'cash';
+        if (paymentType === 'cash') {
+          cashTotal += sale.total || 0;
+        } else {
+          cardTotal += sale.total || 0;
+        }
+      });
       
       document.getElementById('salesTotalRevenue').textContent = '$' + totalRevenue.toFixed(2);
       document.getElementById('salesTotalCount').textContent = totalCount;
       document.getElementById('salesAvgTicket').textContent = '$' + avgTicket.toFixed(2);
-      document.getElementById('salesItemsCount').textContent = itemsCount || '-';
+      
+      const cashEl = document.getElementById('salesCashTotal');
+      const cardEl = document.getElementById('salesCardTotal');
+      if (cashEl) cashEl.textContent = '$' + cashTotal.toFixed(2);
+      if (cardEl) cardEl.textContent = '$' + cardTotal.toFixed(2);
+    }
+    
+    function filterSalesData() {
+      // Filtrar vendas localmente baseado nos filtros
+      loadSalesData();
+    }
+    
+    function printSalesReport() {
+      window.print();
+    }
+    
+    function closeSaleDetailModal() {
+      document.getElementById('saleDetailModal').classList.add('hidden');
+      document.getElementById('saleDetailModal').classList.remove('flex');
     }
     
     function changeSalesPage(delta) {
@@ -3524,7 +3682,94 @@ function getOwnerDashboardHTML() {
       const sale = allSales.find(s => s.id == saleId || s.sale_number == saleId);
       if (!sale) return;
       
-      alert('Venda: ' + (sale.sale_number || saleId) + '\\nTotal: $' + (sale.total || 0).toFixed(2) + '\\nData: ' + new Date(sale.created_at || sale.timestamp).toLocaleString('pt-BR'));
+      const modal = document.getElementById('saleDetailModal');
+      const storeName = sale.store_name || allStoresData.find(s => s.id == sale.store_id)?.name || 'Loja';
+      const operatorName = sale.user_name || sale.operator || sale.cashier_name || 'Não identificado';
+      const saleDate = new Date(sale.created_at || sale.timestamp);
+      const paymentType = sale.payment_method || sale.payment_type || 'cash';
+      
+      const paymentLabels = {
+        'cash': '💵 Dinheiro',
+        'credit': '💳 Cartão Crédito',
+        'debit': '💳 Cartão Débito',
+        'pix': '📱 PIX',
+        'mixed': '🔄 Misto'
+      };
+      
+      document.getElementById('saleDetailTitle').textContent = 'Venda #' + (sale.sale_number || sale.id);
+      document.getElementById('saleDetailSubtitle').textContent = saleDate.toLocaleString('pt-BR');
+      
+      document.getElementById('saleDetailContent').innerHTML = \`
+        <div class="space-y-6">
+          <!-- Info Principal -->
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="text-xs text-gray-500 mb-1">🏪 Loja</p>
+              <p class="font-semibold text-gray-800">\${storeName}</p>
+            </div>
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="text-xs text-gray-500 mb-1">👤 Operador</p>
+              <p class="font-semibold text-gray-800">\${operatorName}</p>
+            </div>
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="text-xs text-gray-500 mb-1">💳 Pagamento</p>
+              <p class="font-semibold text-gray-800">\${paymentLabels[paymentType] || paymentType}</p>
+            </div>
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="text-xs text-gray-500 mb-1">📊 Status</p>
+              <p class="font-semibold text-green-600">\${sale.status === 'completed' ? '✅ Concluída' : sale.status}</p>
+            </div>
+          </div>
+          
+          <!-- Itens da Venda (se disponível) -->
+          \${sale.items && sale.items.length > 0 ? \`
+            <div>
+              <h4 class="font-semibold text-gray-800 mb-3">📦 Itens da Venda</h4>
+              <div class="border rounded-lg overflow-hidden">
+                <table class="w-full">
+                  <thead class="bg-gray-100">
+                    <tr>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Produto</th>
+                      <th class="px-4 py-2 text-center text-xs font-medium text-gray-600">Qtd</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-600">Preço</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-600">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y">
+                    \${sale.items.map(item => \`
+                      <tr>
+                        <td class="px-4 py-2 text-sm">\${item.product_name || item.name || 'Produto'}</td>
+                        <td class="px-4 py-2 text-sm text-center">\${item.quantity}</td>
+                        <td class="px-4 py-2 text-sm text-right">$\${(item.unit_price || item.price || 0).toFixed(2)}</td>
+                        <td class="px-4 py-2 text-sm text-right font-medium">$\${(item.subtotal || (item.quantity * (item.unit_price || item.price || 0))).toFixed(2)}</td>
+                      </tr>
+                    \`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          \` : '<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center text-yellow-700">⚠️ Detalhes dos itens não disponíveis</div>'}
+          
+          <!-- Total -->
+          <div class="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-6 text-white text-center">
+            <p class="text-green-100 text-sm mb-1">Total da Venda</p>
+            <p class="text-4xl font-bold">$\${(sale.total || 0).toFixed(2)}</p>
+          </div>
+          
+          <!-- Ações -->
+          <div class="flex gap-3">
+            <button onclick="closeSaleDetailModal()" class="flex-1 px-4 py-3 border rounded-lg hover:bg-gray-50 font-medium">
+              Fechar
+            </button>
+            <button onclick="window.print()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+              🖨️ Imprimir
+            </button>
+          </div>
+        </div>
+      \`;
+      
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
     }
     
     function exportSales(format) {
