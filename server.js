@@ -1289,11 +1289,26 @@ app.delete('/api/admin/categories/:id', checkOwnerAuth, async (req, res) => {
 });
 
 // Listar todas as promoções
-app.get('/api/admin/promotions', checkOwnerAuth, (req, res) => {
+app.get('/api/admin/promotions', checkOwnerAuth, async (req, res) => {
   try {
+    // Buscar do Supabase primeiro
+    if (useSupabase && supabase) {
+      const { data, error } = await supabase
+        .from('promotions')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (!error && data) {
+        console.log(`📦 ${data.length} promoções carregadas do Supabase`);
+        return res.json({ promotions: data, total: data.length, source: 'supabase' });
+      }
+    }
+    
+    // Fallback para memória
     const promotions = Array.from(promotionsStore.values()).flat();
-    res.json({ promotions, total: promotions.length });
+    res.json({ promotions, total: promotions.length, source: 'memory' });
   } catch (error) {
+    console.error('Error listing promotions:', error);
     res.status(500).json({ error: 'Erro ao listar promoções' });
   }
 });
