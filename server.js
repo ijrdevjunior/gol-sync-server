@@ -1436,6 +1436,116 @@ app.delete('/api/admin/promotions/:id', checkOwnerAuth, async (req, res) => {
   }
 });
 
+// =====================
+// USUÁRIOS (USERS) API
+// =====================
+
+// Cache de usuários em memória
+const usersStore = new Map();
+
+// Listar todos os usuários
+app.get('/api/admin/users', checkOwnerAuth, async (req, res) => {
+  try {
+    // Buscar do Supabase primeiro
+    if (useSupabase && supabase) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('full_name');
+      
+      if (!error && data) {
+        console.log(`👥 ${data.length} usuários carregados do Supabase`);
+        return res.json({ users: data, total: data.length, source: 'supabase' });
+      }
+    }
+    
+    // Fallback para memória
+    const users = Array.from(usersStore.values()).flat();
+    res.json({ users, total: users.length, source: 'memory' });
+  } catch (error) {
+    console.error('Error listing users:', error);
+    res.status(500).json({ error: 'Erro ao listar usuários' });
+  }
+});
+
+// Criar/Atualizar usuário
+app.post('/api/admin/users', checkOwnerAuth, async (req, res) => {
+  try {
+    const user = req.body;
+    user.updated_at = new Date().toISOString();
+    
+    if (!user.id) {
+      user.id = Date.now();
+      user.created_at = new Date().toISOString();
+    }
+
+    // Salvar no Supabase
+    if (useSupabase && supabase) {
+      const { error } = await supabase
+        .from('users')
+        .upsert({
+          id: user.id,
+          username: user.username,
+          full_name: user.full_name,
+          role: user.role || 'cashier',
+          store_id: user.store_id || null,
+          email: user.email || null,
+          phone: user.phone || null,
+          is_active: user.is_active !== false,
+          created_at: user.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+        
+      if (error) {
+        console.error('Error saving user to Supabase:', error.message);
+      }
+    }
+
+    // Atualizar cache em memória
+    if (!usersStore.has(1)) {
+      usersStore.set(1, []);
+    }
+    const users = usersStore.get(1);
+    const existingIndex = users.findIndex(u => u.id === user.id);
+    if (existingIndex >= 0) {
+      users[existingIndex] = { ...users[existingIndex], ...user };
+    } else {
+      users.push(user);
+    }
+    
+    console.log(`✅ Usuário salvo: ${user.full_name || user.username}`);
+    res.json({ success: true, user });
+  } catch (error) {
+    console.error('Error saving user:', error);
+    res.status(500).json({ error: 'Erro ao salvar usuário' });
+  }
+});
+
+// Deletar usuário
+app.delete('/api/admin/users/:id', checkOwnerAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Deletar do Supabase
+    if (useSupabase && supabase) {
+      await supabase.from('users').delete().eq('id', id);
+    }
+    
+    // Deletar do cache em memória
+    usersStore.forEach((users) => {
+      const index = users.findIndex(u => u.id == id);
+      if (index >= 0) {
+        users.splice(index, 1);
+      }
+    });
+    
+    res.json({ success: true, message: 'Usuário deletado' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Erro ao deletar usuário' });
+  }
+});
+
 // Estatísticas gerais do sistema
 app.get('/api/admin/stats', checkOwnerAuth, (req, res) => {
   try {
@@ -1560,6 +1670,7 @@ function getOwnerDashboardHTML() {
           <button onclick="switchTab('products')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📦 Produtos</button>
           <button onclick="switchTab('categories')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">📁 Categorias</button>
           <button onclick="switchTab('promotions')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">🏷️ Promoções</button>
+          <button onclick="switchTab('users')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">👥 Usuários</button>
           <button onclick="switchTab('cloud')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-white/20">☁️ Nuvem</button>
         </div>
       </div>
@@ -1790,6 +1901,74 @@ function getOwnerDashboardHTML() {
           <div id="promotionsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div class="text-center py-8 text-gray-400 col-span-full">Carregando promoções...</div>
           </div>
+        </div>
+      </div>
+
+      <!-- USERS TAB -->
+      <div id="tab-users" class="tab-content hidden">
+        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+          <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-gray-800">👥 Gerenciar Usuários</h2>
+            <button onclick="openUserModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium">
+              ➕ Novo Usuário
+            </button>
+          </div>
+          <div id="usersGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="text-center py-8 text-gray-400 col-span-full">Carregando usuários...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Modal -->
+      <div id="userModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+          <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
+            <h3 id="userModalTitle" class="text-lg font-bold">Novo Usuário</h3>
+            <button onclick="closeUserModal()" class="text-white/80 hover:text-white text-2xl">&times;</button>
+          </div>
+          <form id="userForm" class="p-6" onsubmit="saveUser(event)">
+            <input type="hidden" id="userId">
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Nome Completo *</label>
+                <input type="text" id="userFullName" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Nome do funcionário">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Usuário (login) *</label>
+                <input type="text" id="userUsername" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Ex: joao.silva">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Função *</label>
+                <select id="userRole" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value="cashier">🛒 Caixa</option>
+                  <option value="manager">📋 Gerente</option>
+                  <option value="admin">⚙️ Administrador</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Loja</label>
+                <select id="userStore" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value="">Todas as lojas</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input type="email" id="userEmail" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="email@exemplo.com">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                <input type="tel" id="userPhone" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="(11) 99999-9999">
+              </div>
+              <div class="flex items-center gap-2">
+                <input type="checkbox" id="userActive" checked class="w-4 h-4 text-blue-600">
+                <label for="userActive" class="text-sm text-gray-700">Usuário Ativo</label>
+              </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+              <button type="button" onclick="closeUserModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">💾 Salvar</button>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -2732,12 +2911,177 @@ function getOwnerDashboardHTML() {
       if (tab === 'products') loadProducts();
       else if (tab === 'categories') loadCategories();
       else if (tab === 'promotions') loadPromotions();
+      else if (tab === 'users') loadUsers();
       else if (tab === 'dashboard') loadData();
       else if (tab === 'cloud') loadCloudStatus();
     }
 
     function refreshCurrentTab() {
       switchTab(currentTab);
+    }
+
+    // =====================
+    // USERS MANAGEMENT
+    // =====================
+    let allUsers = [];
+    
+    async function loadUsers() {
+      try {
+        const response = await fetch(API_BASE + '/api/admin/users?password=' + encodeURIComponent(password));
+        const data = await response.json();
+        allUsers = data.users || [];
+        renderUsers();
+        loadStoresForUserSelect();
+      } catch (error) {
+        console.error('Error loading users:', error);
+      }
+    }
+    
+    async function loadStoresForUserSelect() {
+      try {
+        // Buscar lojas do Supabase
+        const select = document.getElementById('userStore');
+        if (!select) return;
+        
+        // Por enquanto, mostrar opção padrão
+        // Você pode adicionar endpoint para buscar lojas se necessário
+        select.innerHTML = '<option value="">Todas as lojas</option>' +
+          '<option value="1">Loja Principal</option>';
+      } catch (error) {
+        console.error('Error loading stores:', error);
+      }
+    }
+    
+    function renderUsers() {
+      const grid = document.getElementById('usersGrid');
+      if (allUsers.length === 0) {
+        grid.innerHTML = '<div class="text-center py-8 text-gray-400 col-span-full">' +
+          '<p class="text-4xl mb-2">👥</p>' +
+          '<p>Nenhum usuário cadastrado</p>' +
+          '<p class="text-sm">Os usuários são sincronizados do sistema local</p>' +
+        '</div>';
+        return;
+      }
+      
+      const roleIcons = {
+        'admin': '⚙️',
+        'manager': '📋',
+        'cashier': '🛒'
+      };
+      
+      const roleNames = {
+        'admin': 'Administrador',
+        'manager': 'Gerente',
+        'cashier': 'Caixa'
+      };
+      
+      grid.innerHTML = allUsers.map(u => {
+        const isActive = u.is_active !== false;
+        const roleIcon = roleIcons[u.role] || '👤';
+        const roleName = roleNames[u.role] || u.role;
+        
+        return '<div class="bg-gradient-to-br ' + (isActive ? 'from-blue-50 to-blue-100 border-blue-300' : 'from-gray-50 to-gray-100 border-gray-300') + ' rounded-xl p-4 border-2">' +
+          '<div class="flex justify-between items-start mb-3">' +
+            '<div class="flex items-center gap-3">' +
+              '<div class="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center text-2xl">' + roleIcon + '</div>' +
+              '<div>' +
+                '<h4 class="font-bold text-gray-800">' + (u.full_name || u.username) + '</h4>' +
+                '<p class="text-sm text-gray-500">@' + u.username + '</p>' +
+              '</div>' +
+            '</div>' +
+            '<div class="flex gap-1">' +
+              '<button onclick="editUser(' + u.id + ')" class="p-1 hover:bg-white/50 rounded">✏️</button>' +
+              '<button onclick="deleteUser(' + u.id + ')" class="p-1 hover:bg-red-100 rounded">🗑️</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="space-y-2">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="text-xs px-2 py-1 bg-' + (u.role === 'admin' ? 'purple' : u.role === 'manager' ? 'blue' : 'green') + '-200 text-' + (u.role === 'admin' ? 'purple' : u.role === 'manager' ? 'blue' : 'green') + '-800 rounded-full">' + roleName + '</span>' +
+              '<span class="text-xs px-2 py-1 ' + (isActive ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-600') + ' rounded-full">' + (isActive ? '✓ Ativo' : 'Inativo') + '</span>' +
+            '</div>' +
+            (u.email ? '<p class="text-xs text-gray-500">📧 ' + u.email + '</p>' : '') +
+            (u.phone ? '<p class="text-xs text-gray-500">📱 ' + u.phone + '</p>' : '') +
+            (u.created_at ? '<p class="text-xs text-gray-400">Criado: ' + new Date(u.created_at).toLocaleDateString('pt-BR') + '</p>' : '') +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+    
+    function openUserModal(user = null) {
+      document.getElementById('userModalTitle').textContent = user ? 'Editar Usuário' : 'Novo Usuário';
+      document.getElementById('userId').value = user ? user.id : '';
+      document.getElementById('userFullName').value = user ? user.full_name || '' : '';
+      document.getElementById('userUsername').value = user ? user.username || '' : '';
+      document.getElementById('userRole').value = user ? user.role || 'cashier' : 'cashier';
+      document.getElementById('userStore').value = user ? user.store_id || '' : '';
+      document.getElementById('userEmail').value = user ? user.email || '' : '';
+      document.getElementById('userPhone').value = user ? user.phone || '' : '';
+      document.getElementById('userActive').checked = user ? user.is_active !== false : true;
+      
+      document.getElementById('userModal').classList.remove('hidden');
+      document.getElementById('userModal').classList.add('flex');
+    }
+    
+    function closeUserModal() {
+      document.getElementById('userModal').classList.add('hidden');
+      document.getElementById('userModal').classList.remove('flex');
+    }
+    
+    function editUser(id) {
+      const user = allUsers.find(u => u.id === id);
+      if (user) {
+        openUserModal(user);
+      }
+    }
+    
+    async function saveUser(e) {
+      e.preventDefault();
+      
+      const user = {
+        id: document.getElementById('userId').value ? parseInt(document.getElementById('userId').value) : null,
+        full_name: document.getElementById('userFullName').value,
+        username: document.getElementById('userUsername').value,
+        role: document.getElementById('userRole').value,
+        store_id: document.getElementById('userStore').value ? parseInt(document.getElementById('userStore').value) : null,
+        email: document.getElementById('userEmail').value || null,
+        phone: document.getElementById('userPhone').value || null,
+        is_active: document.getElementById('userActive').checked
+      };
+
+      try {
+        const response = await fetch(API_BASE + '/api/admin/users?password=' + encodeURIComponent(password), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(user)
+        });
+        
+        if (response.ok) {
+          closeUserModal();
+          loadUsers();
+          alert('Usuário salvo!');
+        }
+      } catch (error) {
+        console.error('Error saving user:', error);
+      }
+    }
+    
+    async function deleteUser(id) {
+      const user = allUsers.find(u => u.id === id);
+      if (user && user.role === 'admin') {
+        alert('Não é possível deletar o usuário administrador!');
+        return;
+      }
+      
+      if (!confirm('Tem certeza que deseja excluir este usuário?')) return;
+      
+      try {
+        await fetch(API_BASE + '/api/admin/users/' + id + '?password=' + encodeURIComponent(password), {
+          method: 'DELETE'
+        });
+        loadUsers();
+      } catch (error) {
+        console.error('Error deleting user:', error);
+      }
     }
 
     // =====================
