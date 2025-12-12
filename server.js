@@ -588,7 +588,6 @@ app.post('/api/sync/stores', async (req, res) => {
             name: name,
             address: address || null,
             phone: phone || null,
-            is_active: true,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           }, { onConflict: 'id' });
