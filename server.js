@@ -3082,9 +3082,8 @@ function getOwnerDashboardHTML() {
     
     function changeSelectedStore() {
       selectedStoreId = document.getElementById('storeSelector').value;
-      loadData();
       
-      // Update other tabs info
+      // Update store name display
       const storeName = selectedStoreId === 'all' ? 'Todas as lojas' : 
         allStoresData.find(s => s.id == selectedStoreId)?.name || 'Loja';
       
@@ -3092,6 +3091,9 @@ function getOwnerDashboardHTML() {
       const employeesInfo = document.getElementById('employeesStoreInfo');
       if (salesInfo) salesInfo.textContent = storeName;
       if (employeesInfo) employeesInfo.textContent = storeName;
+      
+      // Recarregar a aba atual com o filtro da nova loja
+      refreshCurrentTab();
     }
     
     function updateSingleStoreView(store) {
@@ -3718,10 +3720,27 @@ function getOwnerDashboardHTML() {
     
     function renderUsers() {
       const grid = document.getElementById('usersGrid');
-      if (allUsers.length === 0) {
+      
+      // Filtrar usuários pela loja selecionada
+      let filteredUsers = allUsers;
+      if (selectedStoreId !== 'all') {
+        filteredUsers = allUsers.filter(u => 
+          u.store_id == selectedStoreId || !u.store_id // Inclui usuários sem loja definida
+        );
+      }
+      
+      // Atualizar contador
+      const storeName = selectedStoreId === 'all' ? 'Todas as lojas' : 
+        (allStoresData.find(s => s.id == selectedStoreId)?.name || 'Loja');
+      const header = document.querySelector('#tab-users h2');
+      if (header) {
+        header.innerHTML = '👥 Gerenciar Usuários <span class="text-sm font-normal text-gray-500">(' + storeName + ')</span>';
+      }
+      
+      if (filteredUsers.length === 0) {
         grid.innerHTML = '<div class="text-center py-8 text-gray-400 col-span-full">' +
           '<p class="text-4xl mb-2">👥</p>' +
-          '<p>Nenhum usuário cadastrado</p>' +
+          '<p>Nenhum usuário ' + (selectedStoreId !== 'all' ? 'nesta loja' : 'cadastrado') + '</p>' +
           '<p class="text-sm">Os usuários são sincronizados do sistema local</p>' +
         '</div>';
         return;
@@ -3739,7 +3758,7 @@ function getOwnerDashboardHTML() {
         'cashier': 'Caixa'
       };
       
-      grid.innerHTML = allUsers.map(u => {
+      grid.innerHTML = filteredUsers.map(u => {
         const isActive = u.is_active !== false;
         const roleIcon = roleIcons[u.role] || '👤';
         const roleName = roleNames[u.role] || u.role;
